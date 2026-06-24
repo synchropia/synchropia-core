@@ -1,7 +1,9 @@
 from typing import Dict, Any, Optional, List, Type
 import aiohttp,sys
 from loguru import logger 
-import httpx
+import httpx,requests
+import time
+import jwt
 from pydantic import BaseModel, Field
 from langchain_core.callbacks import (
     AsyncCallbackManagerForToolRun,
@@ -9,21 +11,16 @@ from langchain_core.callbacks import (
 )
 import os 
 from dotenv import load_dotenv 
+from src.config.settings import settings
 
 load_dotenv()
 
-GITHUP_PAT_TOKEN = os.getenv("GITHUB_PAT_TOKEN")
 
 from abc import ABC, abstractmethod
 from langchain_core.tools import BaseTool
 from langchain_core.tools.base import ArgsSchema
 
-logger.remove()
-
-FORMAT = """<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"""
-logger.add(sys.stderr, format=FORMAT)
-
-
+from src.utils.logger import logger 
 
 class ToolInputSchema(BaseModel):
     """Define your input schema in subclasses via args_schema override."""
@@ -59,7 +56,7 @@ class GitHubAPIClient:
     formatting, response parsing, and error handling.
 
     Features:
-        - Personal Access Token authentication
+        - app_id , private_key_path and installation_id authentication
         - Support for both sync and async operations
         - Automatic JSON request/response handling
         - Comprehensive error handling and logging
@@ -67,7 +64,7 @@ class GitHubAPIClient:
         - Custom base URL support (for GitHub Enterprise)
 
     Prerequisites:
-        - Valid GitHub Personal Access Token with appropriate scopes
+        - Valid GitHub App ID, private key path and installation ID
         - Network connectivity to GitHub API
         - Required permissions for the operations being performed
 
@@ -86,7 +83,7 @@ class GitHubAPIClient:
     Example Usage:
         ```python
         # Initialize with token
-        client = GitHubAPIClient(token="ghp_your_token_here")
+        client = GitHubAPIClient(app_id=,private_key_path=,installation_id=,base_url="https://api.github.com")
 
         # Make a GET request
         repos = client.make_request("GET", "user/repos")
@@ -103,13 +100,14 @@ class GitHubAPIClient:
         ```
     """
 
-    def __init__(self, token: str, base_url: str = "https://api.github.com"):
+    def __init__(self, app_id: str = None, private_key_path: str = None, installation_id: str = None, base_url: str = "https://api.github.com"):
         """
         Initialize the GitHub API client.
 
         Args:
-            token (str): GitHub Personal Access Token for authentication.
-                        Must have appropriate scopes for the operations you need.
+            app_id (str) : GitHub App ID
+            private_key_path (str) : Path to the GitHub App private key
+            installation_id (str) : GitHub Installation ID
             base_url (str): Base URL for the GitHub API.
                            Defaults to "https://api.github.com" for GitHub.com.
                            Use custom URL for GitHub Enterprise instances.
@@ -120,22 +118,85 @@ class GitHubAPIClient:
         Example:
             ```python
             # GitHub.com
-            client = GitHubAPIClient("ghp_your_token_here")
+            client = GitHubAPIClient(app_id=,private_key_path=,installation_id=,base_url="https://api.github.com")
 
             # GitHub Enterprise
-            client = GitHubAPIClient(
-                "ghp_your_token_here",
-                "https://github.yourcompany.com/api/v3"
-            )
+            client = GitHubAPIClient(app_id=,private_key_path=,installation_id=,base_url="https://github.yourcompany.com/api/v3")
             ```
         """
-        self.token = token
+        self.app_id = app_id or settings.GITHUB_APP_ID
+        self.private_key_path = private_key_path or settings.GITHUB_PRIVATE_KEY_PATH
+        if self.private_key_path:
+            self.private_key_path = self.private_key_path.strip('"\'')
+        self.installation_id = installation_id or settings.GITHUB_INSTALLATION_ID
         self.base_url = base_url.rstrip("/")
+        
+        token = self._get_installation_access_token()
         self.headers = {
             "Authorization": f"token {token}",
             "Accept": "application/vnd.github.v3+json",
             "User-Agent": "DevOps-Agent/1.0",
         }
+        self.sync_client = httpx.Client(headers=self.headers, timeout=30.0)
+        self.async_client = httpx.AsyncClient(headers=self.headers, timeout=30.0)
+
+    def __del__(self):
+        try:
+            self.sync_client.close()
+        except Exception:
+            pass
+
+    def _get_installation_access_token(self) -> str:
+        """
+        Generate a JWT signed with the GitHub App's private key and exchange it
+        for an installation access token.
+        """
+    
+
+        if not self.app_id:
+            raise ValueError("app_id is not set. Cannot authenticate as GitHub App.")
+        if not self.private_key_path:
+            raise ValueError("private_key_path is not set. Cannot authenticate as GitHub App.")
+        if not self.installation_id:
+            raise ValueError("installation_id is not set. Cannot authenticate as GitHub App.")
+
+        try:
+            with open(self.private_key_path, "r", encoding="utf-8") as f:
+                private_key = f.read()
+        except Exception as e:
+            logger.error(f"Failed to read private key at {self.private_key_path}: {e}")
+            raise ValueError(f"Failed to read private key: {e}")
+
+        now = int(time.time())
+        payload = {
+            "iat": now - 60,
+            "exp": now + 600,
+            "iss": self.app_id,
+        }
+
+        try:
+            encoded_jwt = jwt.encode(payload, private_key, algorithm="RS256")
+        except Exception as e:
+            logger.error(f"Failed to encode JWT: {e}")
+            raise ValueError(f"Failed to encode JWT: {e}")
+
+        if isinstance(encoded_jwt, bytes):
+            encoded_jwt = encoded_jwt.decode("utf-8")
+
+        url = f"{self.base_url}/app/installations/{self.installation_id}/access_tokens"
+        headers = {
+            "Authorization": f"Bearer {encoded_jwt}",
+            "Accept": "application/vnd.github.v3+json",
+        }
+
+        try:
+            response = requests.post(url, headers=headers)
+            response.raise_for_status()
+            token_data = response.json()
+            return token_data["token"]
+        except Exception as e:
+            logger.error(f"Failed to retrieve installation access token: {e}")
+            raise ValueError(f"Failed to retrieve installation access token: {e}")
 
     def make_request(
         self, method: str, endpoint: str, data: Dict[Any, Any] = None
@@ -159,46 +220,25 @@ class GitHubAPIClient:
                            For errors, contains error details.
 
         Raises:
-            requests.RequestException: For network or HTTP errors.
-            ValueError: For invalid request parameters.
-            KeyError: For malformed API responses.
-
-        Example:
-            ```python
-            # Get user repositories
-            repos = client.make_request("GET", "user/repos")
-
-            # Create an issue
-            issue = client.make_request("POST", "repos/owner/repo/issues", {
-                "title": "New feature request",
-                "body": "Please add support for..."
-            })
-
-            # Update repository settings
-            client.make_request("PATCH", "repos/owner/repo", {
-                "description": "Updated description"
-            })
-            ```
+            httpx.HTTPStatusError: For HTTP error codes.
+            httpx.RequestError: For network or connection errors.
         """
-        import requests
-
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
-        logger.info(f"Making {method} request to: {url}")
+        logger.info(f"Making {method} request to: {url} (reusing connection pool)")
         if data:
             logger.debug(f"Request data payload: {data}")
 
         try:
             if method.upper() in ["POST", "PUT", "PATCH"] and data:
-                response = requests.request(
-                    method, url, headers=self.headers, json=data
+                response = self.sync_client.request(
+                    method, url, json=data
                 )
             else:
-                response = requests.request(method, url, headers=self.headers)
+                response = self.sync_client.request(method, url)
 
             logger.info(f"Response status code: {response.status_code}")
             response.raise_for_status()
             
-            # GET /repos/{owner}/{repo}/contents/{path} returns content as json, but for deletes/empty responses it might be empty
             try:
                 res_json = response.json()
                 logger.success(f"Successfully processed {method} request to {endpoint}")
@@ -207,12 +247,12 @@ class GitHubAPIClient:
                 logger.success(f"Successfully processed {method} request to {endpoint} (no JSON body)")
                 return {"status": response.status_code, "message": "Success"}
 
-        except requests.exceptions.RequestException as e:
+        except httpx.HTTPStatusError as e:
             logger.error(f"Request to {url} failed: {str(e)}")
             return {"error": f"Request failed: {str(e)}"}
-        except ValueError as e:
-            logger.error(f"Invalid JSON response from {url}: {str(e)}")
-            return {"error": f"Invalid response format: {str(e)}"}
+        except httpx.RequestError as e:
+            logger.error(f"Network request to {url} failed: {str(e)}")
+            return {"error": f"Network request failed: {str(e)}"}
 
     async def make_async_request(
         self, method: str, endpoint: str, data: Dict[Any, Any] = None
@@ -236,56 +276,42 @@ class GitHubAPIClient:
                            For errors, contains error details.
 
         Raises:
-            aiohttp.ClientError: For network or HTTP errors.
-            ValueError: For invalid request parameters.
-            KeyError: For malformed API responses.
-
-        Example:
-            ```python
-            async def get_user_data():
-                return await client.make_async_request("GET", "user")
-
-            async def create_issue():
-                return await client.make_async_request("POST", "repos/owner/repo/issues", {
-                    "title": "Async issue creation",
-                    "body": "Created via async request"
-                })
-            ```
+            httpx.HTTPStatusError: For HTTP error codes.
+            httpx.RequestError: For network or connection errors.
         """
-        import aiohttp
-
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
-        logger.info(f"Making async {method} request to: {url}")
+        logger.info(f"Making async {method} request to: {url} (reusing connection pool)")
         if data:
             logger.debug(f"Async request data payload: {data}")
 
         try:
-            async with aiohttp.ClientSession() as session:
-                if method.upper() in ["POST", "PUT", "PATCH"] and data:
-                    async with session.request(
-                        method, url, headers=self.headers, json=data
-                    ) as response:
-                        logger.info(f"Async response status code: {response.status}")
-                        response.raise_for_status()
-                        res_json = await response.json()
-                        logger.success(f"Successfully processed async {method} request to {endpoint}")
-                        return res_json
-                else:
-                    async with session.request(
-                        method, url, headers=self.headers
-                    ) as response:
-                        logger.info(f"Async response status code: {response.status}")
-                        response.raise_for_status()
-                        res_json = await response.json()
-                        logger.success(f"Successfully processed async {method} request to {endpoint}")
-                        return res_json
+            if method.upper() in ["POST", "PUT", "PATCH"] and data:
+                response = await self.async_client.request(
+                    method, url, json=data
+                )
+            else:
+                response = await self.async_client.request(method, url)
 
-        except aiohttp.ClientError as e:
+            logger.info(f"Async response status code: {response.status_code}")
+            response.raise_for_status()
+            
+            try:
+                res_json = response.json()
+                logger.success(f"Successfully processed async {method} request to {endpoint}")
+                return res_json
+            except ValueError:
+                logger.success(f"Successfully processed async {method} request to {endpoint} (no JSON body)")
+                return {"status": response.status_code, "message": "Success"}
+
+        except httpx.HTTPStatusError as e:
             logger.error(f"Async request to {url} failed: {str(e)}")
             return {"error": f"Async request failed: {str(e)}"}
-        except ValueError as e:
-            logger.error(f"Invalid async JSON response from {url}: {str(e)}")
-            return {"error": f"Invalid response format: {str(e)}"}
+        except httpx.RequestError as e:
+            logger.error(f"Async network request to {url} failed: {str(e)}")
+            return {"error": f"Async network request failed: {str(e)}"}
+        except Exception as e:
+            logger.error(f"Async request to {url} failed with error: {str(e)}")
+            return {"error": f"Unexpected error: {str(e)}"}
 
 
 # ============= REPOSITORY MANAGEMENT TOOLS =============
@@ -1901,6 +1927,8 @@ class SearchIssuesTool(AbstractTool):
         if sort:
             params["sort"] = sort
         return await self.github_client.make_async_request("GET", endpoint, params)
+
+        
 class RequestReviewerInput(BaseModel):
     """Input schema for requesting reviewers on a pull request."""
     owner: str = Field(description="Repository owner username")
@@ -1942,128 +1970,3 @@ class RequestReviewerTool(AbstractTool):
         data = {"reviewers": reviewers}
         return await self.github_client.make_async_request("POST", endpoint, data)
 
-
-if __name__ == "__main__":
-    github_client = GitHubAPIClient(token=GITHUP_PAT_TOKEN)
-    
-    # 1. Initialize repository with a file on 'main' branch
-    # (Since core_api might be empty, creating contents/README.md initializes the default branch 'main')
-    file_tool = CreateOrUpdateFileTool(github_client=github_client)
-    print("Step 1: Initializing 'main' branch...")
-    import base64
-    content_b64 = base64.b64encode(b"# Core API Repository\nInitial setup.").decode("utf-8")
-    init_res = file_tool.run({
-        "owner": "synchropia",
-        "repo": "core_api",
-        "path": "README.md",
-        "message": "Initial commit to create main branch",
-        "content": content_b64,
-        "branch": "main"
-    })
-    print("Init main response:", init_res)
-
-    # 2. Create the feature branch 'test-branch' from 'main'
-    branch_tool = CreateBranchTool(github_client=github_client)
-    print("\nStep 2: Creating 'test-branch' from 'main'...")
-    branch_res = branch_tool.run({
-        "owner": "synchropia",
-        "repo": "core_api",
-        "branch_name": "test-branch",
-        "source_branch": "main"
-    })
-    print("Create branch response:", branch_res)
-
-    # 3. Create or update a file on 'test-branch'
-    print("\nStep 3: Committing a change to 'test-branch'...")
-    feat_content_b64 = base64.b64encode(b"# Core API Repository\nInitial setup.\n\nFeature changes on test branch.").decode("utf-8")
-    # First, let's get the SHA of README.md on test-branch to update it (it has the same SHA as main's README.md)
-    get_file_tool = GetFileContentTool(github_client=github_client)
-    file_info = get_file_tool.run({
-        "owner": "synchropia",
-        "repo": "core_api",
-        "path": "README.md",
-        "ref": "test-branch"
-    })
-    sha = file_info.get("sha", "") if isinstance(file_info, dict) else ""
-    
-    file_res = file_tool.run({
-        "owner": "synchropia",
-        "repo": "core_api",
-        "path": "README.md",
-        "message": "Feature change commit on test-branch",
-        "content": feat_content_b64,
-        "sha": sha,
-        "branch": "test-branch"
-    })
-    print("Create/update file response:", file_res)
-
-    # 4. Create a Pull Request (PR) from 'test-branch' to 'main'
-    pr_raise = CreatePullRequestTool(github_client=github_client)
-    print("\nStep 4: Creating Pull Request...")
-    pr_res = pr_raise.run({
-        "owner": "synchropia",
-        "repo": "core_api",
-        "title": "PR Raise",
-        "body": "This is a mock pull request by Raghu 6798",
-        "base": "main",
-        "head": "test-branch"
-    })
-    print("Create PR response:", pr_res)
-
-    # 5. Request a reviewer
-    if isinstance(pr_res, dict) and "number" in pr_res:
-        pull_number = pr_res["number"]
-        request_reviewer_tool = RequestReviewerTool(github_client=github_client)
-        print(f"\nStep 5: Requesting reviewer for PR #{pull_number}...")
-        reviewer_res = request_reviewer_tool.run({
-            "owner": "synchropia",
-            "repo": "core_api",
-            "pull_number": pull_number,
-            "reviewers": ["Raghu6798"]
-        })
-        print("Request reviewer response:", reviewer_res)
-
-        # 6. Check PR Status Loop (Gatekeeper) & Merge
-        check_pr_tool = CheckPRStatusTool(github_client=github_client)
-        merge_tool = MergePullRequestTool(github_client=github_client)
-        
-        logger.info(f"\nStep 6: Gatekeeper polling loop - waiting for PR #{pull_number} to be APPROVED...")
-        import time
-        max_attempts = 60  # Poll up to 60 times (e.g. 10 minutes total with 10s intervals)
-        approved = False
-        for attempt in range(1, max_attempts + 1):
-            logger.info(f"Checking PR #{pull_number} status (Attempt {attempt}/{max_attempts})...")
-            status = check_pr_tool.run({
-                "owner": "synchropia",
-                "repo": "core_api",
-                "pull_number": pull_number
-            })
-            
-            if isinstance(status, dict) and status.get("is_approved"):
-                logger.success(f"PR #{pull_number} has been APPROVED!")
-                approved = True
-                break
-            
-            # Print current reviews if any exist
-            if isinstance(status, dict) and "reviews" in status and status["reviews"]:
-                logger.info(f"Current reviews: {status['reviews']}")
-                
-            logger.warning(f"PR #{pull_number} is not approved yet. Retrying in 10 seconds...")
-            time.sleep(10)
-            
-        if approved:
-            logger.info(f"Merging PR #{pull_number}...")
-            merge_res = merge_tool.run({
-                "owner": "synchropia",
-                "repo": "core_api",
-                "pull_number": pull_number,
-                "commit_title": f"Merged PR #{pull_number}",
-                "commit_message": "Automatically merged by DevOps Agent after approval gatekeeper check."
-            })
-            logger.success(f"Merge response: {merge_res}")
-        else:
-            logger.error(f"PR #{pull_number} was not approved within the timeout period. Merge aborted.")
-    else:
-        print("\nSkipping step 5 & 6: PR creation failed or PR already exists:", pr_res)
-    
-    
