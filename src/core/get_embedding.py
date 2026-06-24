@@ -3,7 +3,9 @@ import httpx
 import asyncio
 from typing import List, Optional
 from dotenv import load_dotenv
+
 from langchain_core.embeddings import Embeddings
+from src.config.settings import settings 
 
 load_dotenv()
 
@@ -22,7 +24,7 @@ class OpenRouterEmbeddings(Embeddings):
         timeout: float = 30.0
     ):
         self.model = model
-        self.openrouter_api_key = openrouter_api_key or os.getenv("OPENROUTER_API_KEY")
+        self.openrouter_api_key = openrouter_api_key or settings.OPENROUTER_API_KEY
         self.base_url = base_url
         
         if not self.openrouter_api_key:
@@ -144,4 +146,7 @@ class OpenRouterEmbeddings(Embeddings):
         except (KeyError, IndexError, TypeError) as e:
             raise ValueError(f"Failed to parse embedding response from OpenRouter: {data}") from e
 
-
+if __name__ == "__main__":
+    embed = OpenRouterEmbeddings()
+    embedding = embed.embed_query("Hello, how are you?")
+    print(embedding)
