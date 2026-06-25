@@ -147,6 +147,10 @@ class OpenRouterEmbeddings(Embeddings):
             raise ValueError(f"Failed to parse embedding response from OpenRouter: {data}") from e
 
 if __name__ == "__main__":
-    embed = OpenRouterEmbeddings()
-    embedding = embed.embed_query("Hello, how are you?")
-    print(embedding)
+    import asyncio
+    
+    async def main():
+        embed = OpenRouterEmbeddings()
+        embedding = await embed.aembed_query("Hello, how are you?")
+        print(embedding)
+    asyncio.run(main())

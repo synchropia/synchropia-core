@@ -4,6 +4,10 @@ from typing import Dict, Any, Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from src.config.settings import settings
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Initialize security schema for Bearer token authentication
 security = HTTPBearer(auto_error=True)

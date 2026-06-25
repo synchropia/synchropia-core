@@ -23,17 +23,9 @@ Synchropia is a multi-agent autonomous system designed to revolutionize how soft
 - **VCS Integration:** GitHub Apps API
 - **Infrastructure:** AWS (IaC via Terraform)
 - **Quality Assurance:** SonarQube Cloud
+- **PRD & Architecture Design , Database Schema** Confluence 
+- **Project Management , Task Management** Jira  
 
-## 🕒 FastAPI Lifespan Events
-The lifespan event in FastAPI is written to manage startup and shutdown logic for your application resources (e.g., database connection pools, Redis clients, Kafka producers, background runners, and ML models).
 
-FastAPI provides a unified, recommended approach using Python's `contextlib.asynccontextmanager`. This replaces the deprecated `@app.on_event("startup")` and `@app.on_event("shutdown")` hooks.
-
-### When do you write a lifespan event?
-You write a lifespan event when you want to:
-* **Initialize connections on startup** (so they are ready when the first request arrives).
-* **Dispose of connections cleanly on shutdown** (to prevent connection leaks, orphaned processes, and socket exhaustion).
-* **Handle boot-time errors** (e.g., failing to start the server if your Kafka broker or Postgres DB is offline).
-* **Share resources globally** across your application endpoints.
 
 *Built for the future of AI-driven engineering.*

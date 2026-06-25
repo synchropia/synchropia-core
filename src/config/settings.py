@@ -49,4 +49,13 @@ class Settings(BaseSettings):
     SEMANTIC_CACHE_THRESHOLD: float = 0.85
     SEMANTIC_CACHE_TTL: int = 86400  # Default 24 hours
 
+    # LLM API Keys
+    GROQ_API_KEY: Optional[str] = None
+    CEREBRAS_API_KEY: Optional[str] = None
+    GOOGLE_API_KEY: Optional[str] = None
+    OPENROUTER_API_KEY: Optional[str] = None
+    MISTRAL_API_KEY: Optional[str] = None
+    SAMBANOVA_API_KEY: Optional[str] = None
+    NVIDIA_API_KEY: Optional[str] = None
+
 settings = Settings()

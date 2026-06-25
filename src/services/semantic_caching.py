@@ -177,3 +177,4 @@ class SemanticCache:
             logger.error(f"Failed to clear semantic cache: {e}")
             return 0
 
+semantic_cache = SemanticCache()
