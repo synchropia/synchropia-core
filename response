@@ -1,0 +1,6 @@
+data: {"event": "connected", "run_id": "836ca131-925a-4ba9-bb62-a713779015aa"}
+
+data: {"event": "token", "source": "google", "token": "I am a large language model, trained by Google. My core capabilities revolve around processing, generating, and understanding human language.\n\nHere's a breakdown of what I'm exactly good at:\n\n", "run_id": "836ca131-925a-4ba9-bb62-a713779015aa", "cached": true}
+
+data: {"event": "agent_response", "source": "google", "text": "I am a large language model, trained by Google. My core capabilities revolve around processing, generating, and understanding human language.\n\nHere's a breakdown of what I'm exactly good at:\n\n", "run_id": "836ca131-925a-4ba9-bb62-a713779015aa", "cached": true}
+

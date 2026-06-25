@@ -161,3 +161,5 @@ class KafkaAgentCallbackHandler(BaseCallbackHandler):
                 loop.create_task(self.kafka_client.publish("synchropia-tool-responses", event))
         except RuntimeError:
             asyncio.run(self.kafka_client.publish("synchropia-tool-responses", event))
+
+kafka_client = KafkaAPIClient()

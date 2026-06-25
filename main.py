@@ -1,17 +1,23 @@
 import uvicorn
+import json
+import uuid
+import asyncio
+from pydantic import BaseModel
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, APIRouter
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 from sqlalchemy import create_engine
 
 from src.deps.auth import get_current_user, create_access_token
 from src.config.settings import settings
-from src.services.redis_client import RedisAPIClient
-from src.services.kafka_service import KafkaAPIClient
+from src.services.redis_client import redis_client
+from src.services.kafka_service import kafka_client
+from src.core.llm_gateway import UnifiedLLMGateway
 
 # Database engine initialization
-db_engine = create_engine(str(settings.DATABASE_URL))
+db_engine = create_engine(str(settings.DATABASE_URL_DEV))
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -30,7 +36,6 @@ async def lifespan(app: FastAPI):
     # 2. Redis Connection Check
     try:
         logger.info("Verifying Redis connectivity...")
-        redis_client = RedisAPIClient()
         if redis_client.sync_client.ping():
             logger.success("Redis connection verified successfully.")
             app.state.redis = redis_client
@@ -40,7 +45,6 @@ async def lifespan(app: FastAPI):
     # 3. Kafka Connection Check
     try:
         logger.info("Verifying Kafka connection...")
-        kafka_client = KafkaAPIClient()
         await kafka_client.start_producer()
         logger.success("Kafka connection verified successfully.")
         app.state.kafka = kafka_client
@@ -116,8 +120,70 @@ def generate_token(username: str):
     token = create_access_token(data={"sub": username})
     return {"access_token": token, "token_type": "bearer"}
 
-# 2. PROTECTED ROUTES (Requires Bearer Auth)
-# Secures all routes mounted under this router using Depends(get_current_user)
+class ChatStreamRequest(BaseModel):
+    prompt: str
+    provider: str 
+    model: str 
+    temperature: float = 0.7
+    max_tokens: int = 1024
+
+llm_gateway = UnifiedLLMGateway()
+
+@public_router.post("/api/v1/chat/stream", tags=["Chat"])
+async def chat_stream(req: ChatStreamRequest):
+    """
+    Server-Sent Events (SSE) endpoint that triggers async LLM generation
+    and streams tokens from Kafka.
+    """
+    run_id = str(uuid.uuid4())
+    
+    async def sse_event_generator():
+        # 1. Start generation in a background task
+        generation_task = asyncio.create_task(
+            llm_gateway.generate_response(
+                provider_id=req.provider,
+                model_id=req.model,
+                prompt=req.prompt,
+                run_id=run_id,
+                temperature=req.temperature,
+                max_tokens=req.max_tokens
+            )
+        )
+        
+        # 2. Consume from Kafka topic and yield events
+        consumer = kafka_client.get_consumer("synchropia-agent-responses")
+        await consumer.start()
+        
+        try:
+            yield f"data: {json.dumps({'event': 'connected', 'run_id': run_id})}\n\n"
+            
+            while True:
+                try:
+                    msg = await asyncio.wait_for(consumer.getone(), timeout=1.0)
+                    event = msg.value
+                    if event.get("run_id") == run_id:
+                        yield f"data: {json.dumps(event)}\n\n"
+                        if event.get("event") == "agent_response":
+                            break
+                except asyncio.TimeoutError:
+                    if generation_task.done():
+                        exc = generation_task.exception()
+                        if exc:
+                            yield f"data: {json.dumps({'event': 'error', 'message': str(exc), 'run_id': run_id})}\n\n"
+                        break
+            # Await the background generation task to allow semantic caching to complete.
+            try:
+                await asyncio.wait_for(generation_task, timeout=10.0)
+            except Exception as ge:
+                logger.warning(f"Generation task completion wait failed or timed out: {ge}")
+        finally:
+            await consumer.stop()
+            if not generation_task.done():
+                generation_task.cancel()
+                
+    return StreamingResponse(sse_event_generator(), media_type="text/event-stream")
+
+
 protected_router = APIRouter(
     prefix="/api/v1",
     dependencies=[Depends(get_current_user)]

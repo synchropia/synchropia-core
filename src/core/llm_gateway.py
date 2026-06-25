@@ -2,6 +2,7 @@ import aiohttp
 import asyncio
 from typing import Dict, List, Optional, Any
 from abc import ABC, abstractmethod
+import asyncio
 from dataclasses import dataclass, field
 
 from langchain_openai import ChatOpenAI
@@ -15,7 +16,7 @@ from langchain_sambanova import ChatSambaNova
 from src.config.settings import settings
 from src.services.semantic_caching import semantic_cache
 from src.utils.logger import logger
-
+from src.services.kafka_service import kafka_client
 
 
 @dataclass
@@ -93,39 +94,51 @@ class GoogleAIProvider(BaseLLMProvider):
 
     async def generate(self, model: str, prompt: str, **kwargs) -> str:
         if not self.api_key:
+            logger.error("Google API key is not configured.")
             raise ValueError("Google API key is not configured.")
         
         model_name = model
         # Google API requires model parameter starting with models/
-        if not model_name.startswith("models/"):
-            model_name = f"models/{model_name}"
-            
-        url = f"{self.base_url}/{model_name}:generateContent?key={self.api_key}"
-        payload = {
-            "contents": [
-                {
-                    "parts": [
-                        {"text": prompt}
-                    ]
-                }
-            ],
-            "generationConfig": {
-                "temperature": kwargs.get("temperature", 0.7),
-                "maxOutputTokens": kwargs.get("max_tokens", 1024),
-                "topP": kwargs.get("top_p", 0.9)
-            }
-        }
+        llm = ChatGoogleGenerativeAI(model=model_name, api_key=self.api_key,temperature=kwargs.get("temperature",0.7),top_p=kwargs.get("top_p",0.9),max_tokens=kwargs.get("max_tokens",100000),stop=kwargs.get("stop",None),streaming=True)
         
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=payload) as response:
-                if response.status != 200:
-                    text = await response.text()
-                    raise Exception(f"HTTP {response.status} from Google Gemini API: {text}")
-                data = await response.json()
-                try:
-                    return data["candidates"][0]["content"]["parts"][0]["text"]
-                except (KeyError, IndexError, TypeError) as e:
-                    raise Exception(f"Failed to parse Google Gemini response: {data}") from e
+        logger.info(f"Generating content using Google model: {model_name}")
+        try:
+            
+            run_id = kwargs.get("run_id", "")
+            
+            full_response = []
+            async for chunk in llm.astream(prompt):
+                token = chunk.content
+                if token:
+                    full_response.append(token)
+                    event = {
+                        "event": "token",
+                        "source": "google",
+                        "token": token,
+                        "run_id": run_id
+                    }
+                    try:
+                        await kafka_client.publish("synchropia-agent-responses", event)
+                    except Exception as ke:
+                        logger.warning(f"Failed to publish token to Kafka: {ke}")
+            
+            final_text = "".join(full_response)
+            end_event = {
+                "event": "agent_response",
+                "source": "google",
+                "text": final_text,
+                "run_id": run_id
+            }
+            try:
+                await kafka_client.publish("synchropia-agent-responses", end_event)
+            except Exception as ke:
+                logger.warning(f"Failed to publish final response to Kafka: {ke}")
+                
+            logger.success(f"Successfully generated response from Google model: {model_name}")
+            return final_text
+        except Exception as e:
+            logger.error(f"Exception during generate for Google model {model_name}: {e}")
+            raise
 
 
 class OpenAICompatibleProvider(BaseLLMProvider):
@@ -133,17 +146,11 @@ class OpenAICompatibleProvider(BaseLLMProvider):
     
     async def generate(self, model: str, prompt: str, **kwargs) -> str:
         if not self.api_key and self.provider_info.requires_api_key:
+            logger.error(f"API key is not configured for {self.provider_info.display_name}.")
             raise ValueError(f"API key is not configured for {self.provider_info.display_name}.")
-            
-        headers = {
-            "Content-Type": "application/json"
-        }
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
-            
+              
         if self.provider_info.id == "openrouter":
-            headers["HTTP-Referer"] = "https://synchropia.ai"
-            headers["X-Title"] = "Synchropia"
+            ChatOpenAI(model_name="", api_key=self.api_key, base_url=self.base_url)
             
         payload = {
             "model": model,
@@ -155,16 +162,25 @@ class OpenAICompatibleProvider(BaseLLMProvider):
             "top_p": kwargs.get("top_p", 0.9),
         }
         
-        async with aiohttp.ClientSession() as session:
-            async with session.post(f"{self.base_url}/chat/completions", headers=headers, json=payload) as response:
-                if response.status != 200:
-                    text = await response.text()
-                    raise Exception(f"HTTP {response.status} from {self.provider_info.display_name}: {text}")
-                data = await response.json()
-                try:
-                    return data["choices"][0]["message"]["content"]
-                except (KeyError, IndexError, TypeError) as e:
-                    raise Exception(f"Failed to parse response from {self.provider_info.display_name}: {data}") from e
+        logger.info(f"Generating content using {self.provider_info.display_name} model: {model}")
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(f"{self.base_url}/chat/completions", headers=headers, json=payload) as response:
+                    if response.status != 200:
+                        text = await response.text()
+                        logger.error(f"HTTP {response.status} from {self.provider_info.display_name}: {text}")
+                        raise Exception(f"HTTP {response.status} from {self.provider_info.display_name}: {text}")
+                    data = await response.json()
+                    try:
+                        res = data["choices"][0]["message"]["content"]
+                        logger.success(f"Successfully generated response from {self.provider_info.display_name} model: {model}")
+                        return res
+                    except (KeyError, IndexError, TypeError) as e:
+                        logger.error(f"Failed to parse response from {self.provider_info.display_name}: {data}")
+                        raise Exception(f"Failed to parse response from {self.provider_info.display_name}: {data}") from e
+        except Exception as e:
+            logger.error(f"Exception during generate for {self.provider_info.display_name} model {model}: {e}")
+            raise
 
 
 class GroqProvider(OpenAICompatibleProvider):
@@ -337,7 +353,7 @@ class UnifiedLLMGateway:
     
     def _initialize_providers(self):
         """Initialize all available providers"""
-        
+        logger.info("Initializing UnifiedLLMGateway providers...")
         # Google Gemini
         google_info = ProviderInfo(
             id="google",
@@ -442,6 +458,7 @@ class UnifiedLLMGateway:
             supports_embeddings=False
         )
         self.providers["openrouter"] = OpenRouterProvider(openrouter_info, settings.OPENROUTER_API_KEY)
+        logger.success("UnifiedLLMGateway providers initialized successfully.")
 
     def get_provider(self, provider_id: str) -> Optional[BaseLLMProvider]:
         """Get a provider by ID"""
@@ -467,6 +484,37 @@ class UnifiedLLMGateway:
             cached_res = await semantic_cache.lookup(prompt)
             if cached_res is not None:
                 logger.success("Gateway request satisfied from semantic cache.")
+                run_id = kwargs.get("run_id")
+                if run_id:
+                    import asyncio
+                    words = cached_res.split(" ")
+                    for i, word in enumerate(words):
+                        # Restore the space between words
+                        token = word + (" " if i < len(words) - 1 else "")
+                        token_event = {
+                            "event": "token",
+                            "source": provider_id,
+                            "token": token,
+                            "run_id": run_id,
+                            "cached": True
+                        }
+                        try:
+                            await kafka_client.publish("synchropia-agent-responses", token_event)
+                        except Exception as ke:
+                            logger.warning(f"Failed to publish cached token to Kafka: {ke}")
+                        await asyncio.sleep(0.015)
+                        
+                    response_event = {
+                        "event": "agent_response",
+                        "source": provider_id,
+                        "text": cached_res,
+                        "run_id": run_id,
+                        "cached": True
+                    }
+                    try:
+                        await kafka_client.publish("synchropia-agent-responses", response_event)
+                    except Exception as ke:
+                        logger.warning(f"Failed to publish cached response to Kafka: {ke}")
                 return cached_res
         except Exception as e:
             logger.warning(f"Failed to lookup in semantic cache: {e}")
@@ -474,22 +522,31 @@ class UnifiedLLMGateway:
         # 2. Get provider
         provider = self.get_provider(provider_id)
         if not provider:
+            logger.error(f"Provider '{provider_id}' is not supported or not configured.")
             raise ValueError(f"Provider '{provider_id}' is not supported or not configured.")
 
         # 3. Generate response from provider API
-        response_text = await provider.generate(model_id, prompt, **kwargs)
+        try:
+            response_text = await provider.generate(model_id, prompt, **kwargs)
+        except Exception as e:
+            logger.error(f"Failed to generate response from provider '{provider_id}' using model '{model_id}': {e}")
+            raise
 
         # 4. Save response to semantic cache
         try:
             await semantic_cache.set(prompt, response_text)
+            logger.success("Successfully saved generated response to semantic cache.")
         except Exception as e:
             logger.warning(f"Failed to save response to semantic cache: {e}")
 
         return response_text
 
+async def test():
+    llm_gateway = UnifiedLLMGateway()
+    models = await llm_gateway.get_models_for_provider("groq")
+    model = models[2]
+    response = await llm_gateway.generate_response("groq",model, "Hello, how are you?")
+    print(response)
 
 if __name__ == "__main__":
-    async def test():
-        llm_gateway = UnifiedLLMGateway()
-        gemini_models = await llm_gateway.get_models_for_provider("google")
-        print(gemini_models)
+    asyncio.run(test())

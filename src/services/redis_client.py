@@ -144,9 +144,5 @@ class RedisAPIClient:
             logger.error(f"Redis async PUBLISH failed on channel {channel}: {e}")
             return 0
 
-if __name__ == "__main__":
-    redis_client = RedisAPIClient()
-    redis_client.set("test", "test")
-    print(redis_client.get("test"))
-    redis_client.delete("test")
-    print(redis_client.get("test"))
+
+redis_client = RedisAPIClient()
