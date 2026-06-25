@@ -178,3 +178,5 @@ class SemanticCache:
             return 0
 
 semantic_cache = SemanticCache()
+
+__all__ = ["SemanticCache", "semantic_cache"]

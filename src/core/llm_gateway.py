@@ -62,7 +62,147 @@ class BaseLLMProvider(ABC):
         pass
 
 
-class GoogleAIProvider(BaseLLMProvider):
+
+
+class OpenAICompatibleProvider(BaseLLMProvider):
+    """Base class for OpenAI-compatible providers (Groq, Mistral, Cerebras, OpenRouter, etc.)"""
+    
+    async def generate(self, model: str, prompt: str, **kwargs) -> str:
+        if not self.api_key and self.provider_info.requires_api_key:
+            logger.error(f"API key is not configured for {self.provider_info.display_name}.")
+            raise ValueError(f"API key is not configured for {self.provider_info.display_name}.")
+              
+        provider_id = self.provider_info.id
+        
+        # Instantiate correct LangChain class based on provider
+        match provider_id:
+            case "openrouter":
+                llm = ChatOpenAI(
+                    model=model,
+                    api_key=self.api_key,
+                    base_url=self.base_url,
+                    temperature=kwargs.get("temperature", 0.7),
+                    top_p=kwargs.get("top_p", 0.9),
+                    max_tokens=kwargs.get("max_tokens", 100000),
+                    stop=kwargs.get("stop", None),
+                    streaming=True
+                )
+            case "google":
+                llm = ChatGoogleGenerativeAI(
+                    model=model,
+                    api_key=self.api_key,
+                    temperature=kwargs.get("temperature", 0.7),
+                    top_p=kwargs.get("top_p", 0.9),
+                    max_tokens=kwargs.get("max_tokens", 100000),
+                    stop=kwargs.get("stop", None),
+                    streaming=True
+                )
+            case "groq":
+                llm = ChatGroq(
+                    model=model,
+                    api_key=self.api_key,
+                    temperature=kwargs.get("temperature", 0.7),
+                    top_p=kwargs.get("top_p", 0.9),
+                    max_tokens=kwargs.get("max_tokens", 100000),
+                    stop=kwargs.get("stop", None),
+                    streaming=True
+                )
+            case "mistral":
+                llm = ChatMistralAI(
+                    model=model,
+                    api_key=self.api_key,
+                temperature=kwargs.get("temperature", 0.7),
+                top_p=kwargs.get("top_p", 0.9),
+                max_tokens=kwargs.get("max_tokens", 100000),
+                stop=kwargs.get("stop", None),
+                streaming=True
+            )
+        
+            case "cerebras":
+                llm = ChatCerebras(
+                    model=model,
+                    api_key=self.api_key,
+                    temperature=kwargs.get("temperature", 0.7),
+                    top_p=kwargs.get("top_p", 0.9),
+                    max_tokens=kwargs.get("max_tokens", 100000),
+                    stop=kwargs.get("stop", None),
+                    streaming=True
+                )
+            case "nvidia":
+                llm = ChatNVIDIA(
+                model=model,
+                api_key=self.api_key,
+                base_url=self.base_url,
+                temperature=kwargs.get("temperature", 0.7),
+                top_p=kwargs.get("top_p", 0.9),
+                max_tokens=kwargs.get("max_tokens", 100000),
+                stop=kwargs.get("stop", None),
+                streaming=True
+            )
+            case "sambanova":
+                llm = ChatSambaNova(
+                model=model,
+                api_key=self.api_key,
+                base_url=self.base_url,
+                temperature=kwargs.get("temperature", 0.7),
+                top_p=kwargs.get("top_p", 0.9),
+                max_tokens=kwargs.get("max_tokens", 100000),
+                stop=kwargs.get("stop", None),
+                streaming=True
+            )
+            case _:
+                # Fallback to ChatOpenAI for any other OpenAI-compatible provider
+                llm = ChatOpenAI(
+                    model=model,
+                    api_key=self.api_key,
+                    base_url=self.base_url,
+                    temperature=kwargs.get("temperature", 0.7),
+                    top_p=kwargs.get("top_p", 0.9),
+                    max_tokens=kwargs.get("max_tokens", 100000),
+                    stop=kwargs.get("stop", None),
+                    streaming=True
+            )
+
+        logger.info(f"Generating content using {self.provider_info.display_name} model: {model}")
+        try:
+            run_id = kwargs.get("run_id", "")
+            
+            full_response = []
+            async for chunk in llm.astream(prompt):
+                token = chunk.content
+                if token:
+                    full_response.append(token)
+                    event = {
+                        "event": "token",
+                        "source": provider_id,
+                        "token": token,
+                        "run_id": run_id
+                    }
+                    try:
+                        await kafka_client.publish("synchropia-agent-responses", event)
+                    except Exception as ke:
+                        logger.warning(f"Failed to publish token to Kafka: {ke}")
+            
+            final_text = "".join(full_response)
+            end_event = {
+                "event": "agent_response",
+                "source": provider_id,
+                "text": final_text,
+                "run_id": run_id
+            }
+            try:
+                await kafka_client.publish("synchropia-agent-responses", end_event)
+            except Exception as ke:
+                logger.warning(f"Failed to publish final response to Kafka: {ke}")
+                
+            logger.success(f"Successfully generated response from {self.provider_info.display_name} model: {model}")
+            return final_text
+        except Exception as e:
+            logger.error(f"Exception during generate for {self.provider_info.display_name} model {model}: {e}")
+            raise
+
+
+class GoogleAIProvider(OpenAICompatibleProvider):
     async def get_models(self) -> List[ModelInfo]:
         if not self.api_key:
             logger.warning("API key not configured for Google. Cannot fetch models.")
@@ -91,96 +231,6 @@ class GoogleAIProvider(BaseLLMProvider):
         except Exception as e:
             logger.error(f"Exception during get_models for Google: {e}")
             return []
-
-    async def generate(self, model: str, prompt: str, **kwargs) -> str:
-        if not self.api_key:
-            logger.error("Google API key is not configured.")
-            raise ValueError("Google API key is not configured.")
-        
-        model_name = model
-        # Google API requires model parameter starting with models/
-        llm = ChatGoogleGenerativeAI(model=model_name, api_key=self.api_key,temperature=kwargs.get("temperature",0.7),top_p=kwargs.get("top_p",0.9),max_tokens=kwargs.get("max_tokens",100000),stop=kwargs.get("stop",None),streaming=True)
-        
-        logger.info(f"Generating content using Google model: {model_name}")
-        try:
-            
-            run_id = kwargs.get("run_id", "")
-            
-            full_response = []
-            async for chunk in llm.astream(prompt):
-                token = chunk.content
-                if token:
-                    full_response.append(token)
-                    event = {
-                        "event": "token",
-                        "source": "google",
-                        "token": token,
-                        "run_id": run_id
-                    }
-                    try:
-                        await kafka_client.publish("synchropia-agent-responses", event)
-                    except Exception as ke:
-                        logger.warning(f"Failed to publish token to Kafka: {ke}")
-            
-            final_text = "".join(full_response)
-            end_event = {
-                "event": "agent_response",
-                "source": "google",
-                "text": final_text,
-                "run_id": run_id
-            }
-            try:
-                await kafka_client.publish("synchropia-agent-responses", end_event)
-            except Exception as ke:
-                logger.warning(f"Failed to publish final response to Kafka: {ke}")
-                
-            logger.success(f"Successfully generated response from Google model: {model_name}")
-            return final_text
-        except Exception as e:
-            logger.error(f"Exception during generate for Google model {model_name}: {e}")
-            raise
-
-
-class OpenAICompatibleProvider(BaseLLMProvider):
-    """Base class for OpenAI-compatible providers (Groq, Mistral, Cerebras, OpenRouter, etc.)"""
-    
-    async def generate(self, model: str, prompt: str, **kwargs) -> str:
-        if not self.api_key and self.provider_info.requires_api_key:
-            logger.error(f"API key is not configured for {self.provider_info.display_name}.")
-            raise ValueError(f"API key is not configured for {self.provider_info.display_name}.")
-              
-        if self.provider_info.id == "openrouter":
-            ChatOpenAI(model_name="", api_key=self.api_key, base_url=self.base_url)
-            
-        payload = {
-            "model": model,
-            "messages": [
-                {"role": "user", "content": prompt}
-            ],
-            "temperature": kwargs.get("temperature", 0.7),
-            "max_tokens": kwargs.get("max_tokens", 1024),
-            "top_p": kwargs.get("top_p", 0.9),
-        }
-        
-        logger.info(f"Generating content using {self.provider_info.display_name} model: {model}")
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(f"{self.base_url}/chat/completions", headers=headers, json=payload) as response:
-                    if response.status != 200:
-                        text = await response.text()
-                        logger.error(f"HTTP {response.status} from {self.provider_info.display_name}: {text}")
-                        raise Exception(f"HTTP {response.status} from {self.provider_info.display_name}: {text}")
-                    data = await response.json()
-                    try:
-                        res = data["choices"][0]["message"]["content"]
-                        logger.success(f"Successfully generated response from {self.provider_info.display_name} model: {model}")
-                        return res
-                    except (KeyError, IndexError, TypeError) as e:
-                        logger.error(f"Failed to parse response from {self.provider_info.display_name}: {data}")
-                        raise Exception(f"Failed to parse response from {self.provider_info.display_name}: {data}") from e
-        except Exception as e:
-            logger.error(f"Exception during generate for {self.provider_info.display_name} model {model}: {e}")
-            raise
 
 
 class GroqProvider(OpenAICompatibleProvider):
@@ -541,12 +591,4 @@ class UnifiedLLMGateway:
 
         return response_text
 
-async def test():
-    llm_gateway = UnifiedLLMGateway()
-    models = await llm_gateway.get_models_for_provider("groq")
-    model = models[2]
-    response = await llm_gateway.generate_response("groq",model, "Hello, how are you?")
-    print(response)
-
-if __name__ == "__main__":
-    asyncio.run(test())
+unified_llm_gateway = UnifiedLLMGateway()

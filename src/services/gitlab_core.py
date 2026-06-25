@@ -403,6 +403,16 @@ class CreateGitLabMergeRequestTool(AbstractTool):
             payload["description"] = description
         return await client.make_async_request("POST", endpoint, data=payload)
 
+__all__ = [
+    "GitLabAPIClient",
+    "ListGitLabProjectsTool",
+    "GetGitLabFileContentTool",
+    "CreateOrUpdateGitLabFileTool",
+    "CreateGitLabBranchTool",
+    "CreateGitLabMergeRequestTool",
+]
+
+
 if __name__ == "__main__":
     # Test basic functionality
     client = GitLabAPIClient()

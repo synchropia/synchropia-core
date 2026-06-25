@@ -146,3 +146,5 @@ class RedisAPIClient:
 
 
 redis_client = RedisAPIClient()
+
+__all__ = ["RedisAPIClient", "redis_client"]

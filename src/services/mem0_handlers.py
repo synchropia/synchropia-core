@@ -175,6 +175,9 @@ class MemoryLayer:
         return data
 
 
+__all__ = ["MemoryLayer"]
+
+
 # Verification self-test block
 if __name__ == "__main__":
     import asyncio

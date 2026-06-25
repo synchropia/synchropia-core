@@ -163,3 +163,5 @@ class KafkaAgentCallbackHandler(BaseCallbackHandler):
             asyncio.run(self.kafka_client.publish("synchropia-tool-responses", event))
 
 kafka_client = KafkaAPIClient()
+
+__all__ = ["KafkaAPIClient", "KafkaAgentCallbackHandler", "kafka_client"]

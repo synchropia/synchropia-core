@@ -502,3 +502,15 @@ class JiraTransitionIssueTool(AbstractTool):
             return json.dumps({"success": False, "error": post_res["error"]})
         
         return json.dumps({"success": True, "message": f"Issue {issue_key} transitioned successfully."})
+
+
+__all__ = [
+    "JiraAPIClient",
+    "JiraGetMyselfTool",
+    "JiraCreateIssueTool",
+    "JiraSearchIssuesTool",
+    "JiraGetIssueTool",
+    "JiraAddCommentTool",
+    "JiraTransitionIssueTool",
+]
+
