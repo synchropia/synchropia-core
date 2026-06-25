@@ -21,3 +21,7 @@ serve:
 # Apply database migrations using Alembic
 migrate:
     uv run alembic upgrade head
+
+# sync packages from the pyproject.toml 
+sync:
+   uv sync

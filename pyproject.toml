@@ -31,5 +31,7 @@ dependencies = [
     "langchain-nvidia-ai-endpoints>=1.4.1",
     "psycopg2>=2.9.12",
     "gitingest>=0.3.1",
+    "mlflow>=3.14.0",
+    "numpy>=2.5.0",
 ]
 
