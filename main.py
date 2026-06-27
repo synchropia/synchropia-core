@@ -15,6 +15,7 @@ from src.config.settings import settings
 from src.services.redis_client import redis_client
 from src.services.kafka_service import kafka_client
 from src.core.llm_gateway import UnifiedLLMGateway
+from src.agents.architect.index import run_architect
 
 # Database engine initialization
 db_engine = create_engine(str(settings.DATABASE_URL_DEV))
@@ -132,50 +133,59 @@ llm_gateway = UnifiedLLMGateway()
 @public_router.post("/api/v1/chat/stream", tags=["Chat"])
 async def chat_stream(req: ChatStreamRequest):
     """
-    Server-Sent Events (SSE) endpoint that triggers async LLM generation
-    and streams tokens from Kafka.
+    Server-Sent Events (SSE) endpoint that triggers async Architect agent generation
+    and streams tokens/events from Kafka.
     """
     run_id = str(uuid.uuid4())
     
     async def sse_event_generator():
-        # 1. Start generation in a background task
+        # 1. Consume from Kafka topics and yield events
+        consumer = kafka_client.get_consumer(
+            "synchropia-agent-responses",
+            "synchropia-tool-calls",
+            "synchropia-tool-responses"
+        )
+        await consumer.start()
+
+        # 2. Start agent execution in a background task
         generation_task = asyncio.create_task(
-            llm_gateway.generate_response(
-                provider_id=req.provider,
-                model_id=req.model,
-                prompt=req.prompt,
+            run_architect(
+                message=req.prompt,
+                provider=req.provider,
                 run_id=run_id,
-                temperature=req.temperature,
-                max_tokens=req.max_tokens
             )
         )
-        
-        # 2. Consume from Kafka topic and yield events
-        consumer = kafka_client.get_consumer("synchropia-agent-responses")
-        await consumer.start()
+
         
         try:
             yield f"data: {json.dumps({'event': 'connected', 'run_id': run_id})}\n\n"
             
             while True:
                 try:
-                    msg = await asyncio.wait_for(consumer.getone(), timeout=1.0)
+                    msg = await asyncio.wait_for(consumer.getone(), timeout=0.5)
                     event = msg.value
                     if event.get("run_id") == run_id:
                         yield f"data: {json.dumps(event)}\n\n"
-                        if event.get("event") == "agent_response":
-                            break
                 except asyncio.TimeoutError:
                     if generation_task.done():
-                        exc = generation_task.exception()
-                        if exc:
-                            yield f"data: {json.dumps({'event': 'error', 'message': str(exc), 'run_id': run_id})}\n\n"
                         break
-            # Await the background generation task to allow semantic caching to complete.
-            try:
-                await asyncio.wait_for(generation_task, timeout=10.0)
-            except Exception as ge:
-                logger.warning(f"Generation task completion wait failed or timed out: {ge}")
+            
+            # Drain any remaining buffered events that arrived right as the task finished
+            while True:
+                try:
+                    msg = await asyncio.wait_for(consumer.getone(), timeout=0.1)
+                    event = msg.value
+                    if event.get("run_id") == run_id:
+                        yield f"data: {json.dumps(event)}\n\n"
+                except asyncio.TimeoutError:
+                    break
+
+            # Check if the task failed with an exception
+            if generation_task.done():
+                exc = generation_task.exception()
+                if exc:
+                    yield f"data: {json.dumps({'event': 'error', 'message': str(exc), 'run_id': run_id})}\n\n"
+
         finally:
             await consumer.stop()
             if not generation_task.done():

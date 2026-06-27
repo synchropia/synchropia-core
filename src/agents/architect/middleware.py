@@ -40,7 +40,7 @@ class AgentRequest:
     """Immutable-ish snapshot of a single agent invocation request."""
     message: str
     provider: str
-    model: str
+    model:str
     run_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     metadata: dict[str, Any] = field(default_factory=dict)
 

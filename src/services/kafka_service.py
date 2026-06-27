@@ -20,42 +20,57 @@ class KafkaAPIClient:
     """
     def __init__(self, bootstrap_servers: Optional[str] = None):
         self.bootstrap_servers = bootstrap_servers or settings.KAFKA_BOOTSTRAP_SERVERS
-        self.producer = None
-        self.producer_started = False
+        self._producers: Dict[asyncio.AbstractEventLoop, AIOKafkaProducer] = {}
 
-    async def start_producer(self):
-        """Initialize and start the producer."""
-        try:
-            logger.info(f"Attempting connection to Kafka bootstrap servers at {self.bootstrap_servers}")
-            self.producer = AIOKafkaProducer(
+    async def get_producer(self, loop: asyncio.AbstractEventLoop) -> AIOKafkaProducer:
+        """Get or initialize the producer bound to the specified event loop."""
+        if loop not in self._producers or self._producers[loop] is None:
+            logger.info(f"Initializing AIOKafkaProducer for event loop {id(loop)}")
+            producer = AIOKafkaProducer(
                 bootstrap_servers=self.bootstrap_servers,
                 value_serializer=lambda v: json.dumps(v).encode("utf-8")
             )
             # Short timeout to avoid hanging if broker is completely offline
-            await asyncio.wait_for(self.producer.start(), timeout=5.0)
-            self.producer_started = True
-            logger.success("Connected to Kafka broker successfully.")
-        except Exception as e:
-            logger.error(f"Could not connect to Kafka broker at {self.bootstrap_servers}: {e}")
-            raise e
+            await asyncio.wait_for(producer.start(), timeout=5.0)
+            self._producers[loop] = producer
+            logger.success(f"Connected AIOKafkaProducer for event loop {id(loop)}")
+        return self._producers[loop]
+
+    async def start_producer(self):
+        """Initialize and start the producer for the current running event loop."""
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            logger.error("No running event loop found during start_producer call.")
+            raise RuntimeError("No running event loop found during start_producer call.")
+        await self.get_producer(loop)
+
 
     async def stop_producer(self):
-        """Clean up the producer."""
-        if self.producer and self.producer_started:
-            await self.producer.stop()
-            self.producer_started = False
+        """Clean up all active producers."""
+        for loop, producer in list(self._producers.items()):
+            try:
+                if producer:
+                    await producer.stop()
+            except Exception as e:
+                logger.warning(f"Error stopping producer for loop {id(loop)}: {e}")
+        self._producers.clear()
 
     async def publish(self, topic: str, value: Any):
         """Publish an event value to a Kafka topic."""
-        if not self.producer_started:
-            await self.start_producer()
-
         # Format message value as dict if not already
         if not isinstance(value, dict):
             value = {"data": str(value)}
         
         try:
-            await self.producer.send_and_wait(topic, value)
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            logger.warning("No running event loop found during publish fallback.")
+            return
+
+        try:
+            producer = await self.get_producer(loop)
+            await producer.send_and_wait(topic, value)
         except Exception as e:
             logger.error(f"Failed to publish message to topic {topic}: {e}")
             raise e
@@ -86,11 +101,54 @@ class KafkaAgentCallbackHandler(BaseCallbackHandler):
         super().__init__()
         self.kafka_client = kafka_client
         self.default_agent_name = default_agent_name
+        self.run_id: str | None = None
+        try:
+            self.loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self.loop = None
 
     def _get_agent_name(self, metadata: Optional[Dict[str, Any]] = None) -> str:
         if metadata and "agent_name" in metadata:
             return metadata["agent_name"]
         return self.default_agent_name
+
+    def _get_run_id(self, kwargs: Any) -> str:
+        """Resolve the parent agent run ID if configured, else fallback to the step-level run ID."""
+        if self.run_id:
+            return str(self.run_id)
+        return str(kwargs.get("run_id", ""))
+
+    def _safe_publish(self, topic: str, event: dict) -> None:
+        """Publish an event to Kafka in a thread-safe, loop-safe manner."""
+        # 1. Try sending via the captured main event loop (most reliable for cross-thread sync callbacks)
+        if self.loop and self.loop.is_running():
+            try:
+                asyncio.run_coroutine_threadsafe(
+                    self.kafka_client.publish(topic, event),
+                    self.loop
+                )
+                return
+            except Exception as e:
+                logger.warning(f"Failed to publish via run_coroutine_threadsafe: {e}")
+
+        # 2. Fallback to current thread's running loop if different or if main loop is not set/running
+        try:
+            loop = asyncio.get_running_loop()
+            if loop.is_running():
+                loop.create_task(self.kafka_client.publish(topic, event))
+                return
+        except RuntimeError:
+            pass
+
+        # 3. Last resort fallback: run in a temporary loop or blocking call
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                loop.create_task(self.kafka_client.publish(topic, event))
+            else:
+                loop.run_until_complete(self.kafka_client.publish(topic, event))
+        except Exception as e:
+            logger.error(f"Kafka fallback publish failed: {e}")
 
     def on_llm_new_token(self, token: str, **kwargs: Any) -> None:
         """Publish individual generated tokens for real-time streaming."""
@@ -99,14 +157,9 @@ class KafkaAgentCallbackHandler(BaseCallbackHandler):
             "event": "token",
             "source": agent_name,
             "token": token,
-            "run_id": str(kwargs.get("run_id", ""))
+            "run_id": self._get_run_id(kwargs)
         }
-        try:
-            loop = asyncio.get_running_loop()
-            if loop.is_running():
-                loop.create_task(self.kafka_client.publish("synchropia-agent-responses", event))
-        except RuntimeError:
-            asyncio.run(self.kafka_client.publish("synchropia-agent-responses", event))
+        self._safe_publish("synchropia-agent-responses", event)
 
     def on_llm_end(self, response: LLMResult, **kwargs: Any) -> None:
         """Publish the final generation text of the agent."""
@@ -117,14 +170,9 @@ class KafkaAgentCallbackHandler(BaseCallbackHandler):
                     "event": "agent_response",
                     "source": agent_name,
                     "text": generation.text,
-                    "run_id": str(kwargs.get("run_id", ""))
+                    "run_id": self._get_run_id(kwargs)
                 }
-                try:
-                    loop = asyncio.get_running_loop()
-                    if loop.is_running():
-                        loop.create_task(self.kafka_client.publish("synchropia-agent-responses", event))
-                except RuntimeError:
-                    asyncio.run(self.kafka_client.publish("synchropia-agent-responses", event))
+                self._safe_publish("synchropia-agent-responses", event)
 
     def on_tool_start(
         self, serialized: Dict[str, Any], input_str: str, **kwargs: Any
@@ -137,14 +185,9 @@ class KafkaAgentCallbackHandler(BaseCallbackHandler):
             "source": agent_name,
             "tool": tool_name,
             "input": input_str,
-            "run_id": str(kwargs.get("run_id", ""))
+            "run_id": self._get_run_id(kwargs)
         }
-        try:
-            loop = asyncio.get_running_loop()
-            if loop.is_running():
-                loop.create_task(self.kafka_client.publish("synchropia-tool-calls", event))
-        except RuntimeError:
-            asyncio.run(self.kafka_client.publish("synchropia-tool-calls", event))
+        self._safe_publish("synchropia-tool-calls", event)
 
     def on_tool_end(self, output: Any, **kwargs: Any) -> None:
         """Publish tool execution outputs."""
@@ -153,14 +196,9 @@ class KafkaAgentCallbackHandler(BaseCallbackHandler):
             "event": "tool_response",
             "source": agent_name,
             "output": str(output),
-            "run_id": str(kwargs.get("run_id", ""))
+            "run_id": self._get_run_id(kwargs)
         }
-        try:
-            loop = asyncio.get_running_loop()
-            if loop.is_running():
-                loop.create_task(self.kafka_client.publish("synchropia-tool-responses", event))
-        except RuntimeError:
-            asyncio.run(self.kafka_client.publish("synchropia-tool-responses", event))
+        self._safe_publish("synchropia-tool-responses", event)
 
 kafka_client = KafkaAPIClient()
 

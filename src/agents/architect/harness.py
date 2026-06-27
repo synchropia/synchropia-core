@@ -28,28 +28,7 @@ except ModuleNotFoundError:
     SandboxClient = None
     SandboxError = Exception
 
-from src.services import (
-    # GitHub
-    GitHubAPIClient,
-    ListRepositoriesTool, GetRepositoryTool, ListIssuesTool, CreateIssueTool, UpdateIssueTool,
-    ListPullRequestsTool, CreatePullRequestTool, MergePullRequestTool, CheckPRStatusTool,
-    ListWorkflowRunsTool, TriggerWorkflowTool, CancelWorkflowRunTool, ListCommitsTool,
-    ListBranchesTool, CreateBranchTool, ListDeploymentsTool, CreateDeploymentTool,
-    GetFileContentTool, CreateOrUpdateFileTool, ListWebhooksTool, CreateWebhookTool,
-    SearchRepositoriesTool, SearchIssuesTool, RequestReviewerTool,
-    # GitLab
-    GitLabAPIClient,
-    ListGitLabProjectsTool, GetGitLabFileContentTool, CreateOrUpdateGitLabFileTool,
-    CreateGitLabBranchTool, CreateGitLabMergeRequestTool,
-    # Jira
-    JiraAPIClient,
-    JiraGetMyselfTool, JiraCreateIssueTool, JiraSearchIssuesTool, JiraGetIssueTool,
-    JiraAddCommentTool, JiraTransitionIssueTool,
-    # Slack
-    SlackAPIClient,
-    SendMessageTool, CreateChannelTool, InviteUsersTool, ArchiveChannelTool,
-    PinMessageTool, FindUserByEmailTool, FetchLatestMessageTool,
-)
+from src.services import * 
 from src.config.settings import settings
 
 io_executor = ThreadPoolExecutor(max_workers=4)
@@ -286,7 +265,7 @@ class ArchitectAgentHarness:
         gh_client = self._try_init(GitHubAPIClient)
         gl_client = self._try_init(GitLabAPIClient)
         jr_client = self._try_init(JiraAPIClient)
-        sl_client = self._try_init(SlackAPIClient)
+        sl_client = slack_client  # pre-instantiated singleton from slack_service
 
         # 3. Build unified tool list
         self.tools: list = []

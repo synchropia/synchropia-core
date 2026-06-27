@@ -52,6 +52,7 @@ from src.services.redis_client import RedisAPIClient, redis_client
 from src.services.semantic_caching import SemanticCache, semantic_cache
 from src.services.slack_service import (
     SlackAPIClient,
+    slack_client,
     SendMessageTool,
     CreateChannelTool,
     InviteUsersTool,
@@ -117,6 +118,7 @@ __all__ = [
     "semantic_cache",
     # Slack
     "SlackAPIClient",
+    "slack_client",
     "SendMessageTool",
     "CreateChannelTool",
     "InviteUsersTool",

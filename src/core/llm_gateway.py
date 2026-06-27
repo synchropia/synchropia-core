@@ -1,8 +1,9 @@
+# C:\Users\Raghu\Downloads\MAS_Agents\synchropia\src\core\llm_gateway.py
+
 import aiohttp
 import asyncio
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any,AsyncIterator
 from abc import ABC, abstractmethod
-import asyncio
 from dataclasses import dataclass, field
 
 from langchain_openai import ChatOpenAI
@@ -17,6 +18,149 @@ from src.config.settings import settings
 from src.services.semantic_caching import semantic_cache
 from src.utils.logger import logger
 from src.services.kafka_service import kafka_client
+
+import json
+import asyncio
+import requests
+from typing import List, Optional, Any, Sequence, Union, Callable, Type, Dict
+from pydantic import BaseModel
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.outputs import ChatGeneration, ChatResult, ChatGenerationChunk
+from langchain_core.runnables import Runnable
+from langchain_core.tools import BaseTool
+from langchain_core.utils.function_calling import convert_to_openai_tool
+from langchain_core.output_parsers.openai_tools import parse_tool_calls
+
+
+class ChatSelfHosted(BaseChatModel):
+    """LangChain wrapper for a local OpenAI-compatible server with full tool support."""
+    base_url: str = "http://127.0.0.1:8080"
+    model_name: str = "Qwen3.5-4B"
+    temperature: float = 0.1
+    streaming: bool = False
+
+    @property
+    def _llm_type(self) -> str: return "Qwen3.5-4B"
+
+    def _prepare_payload(self, messages: List[BaseMessage], **kwargs: Any) -> Dict[str, Any]:
+        processed_messages = []
+        for m in messages:
+            if isinstance(m, SystemMessage): processed_messages.append({"role": "system", "content": m.content})
+            elif isinstance(m, HumanMessage): processed_messages.append({"role": "user", "content": m.content})
+            elif isinstance(m, AIMessage):
+                msg_dict = {"role": "assistant", "content": m.content or ""}
+                if m.tool_calls:
+                    msg_dict["tool_calls"] = [{"id": tc["id"], "type": "function", "function": {"name": tc["name"], "arguments": json.dumps(tc["args"])}} for tc in m.tool_calls]
+                processed_messages.append(msg_dict)
+            elif isinstance(m, ToolMessage): processed_messages.append({"role": "tool", "content": m.content, "tool_call_id": m.tool_call_id})
+            else: raise TypeError(f"Unsupported message type: {type(m)}")
+        payload = {"model": self.model_name, "messages": processed_messages, "temperature": self.temperature, **kwargs}
+        if "tools" in payload and payload["tools"] is None: del payload["tools"]
+        return payload
+
+    def _send_request(self, messages: List[BaseMessage], **kwargs: Any) -> Dict[str, Any]:
+        payload = self._prepare_payload(messages, **kwargs)
+        print(f"DEBUG: Sending request to {self.base_url}/v1/chat/completions")
+        try:
+            response = requests.post(
+                f"{self.base_url}/v1/chat/completions", 
+                json=payload,
+                timeout=60
+            )
+            print(f"DEBUG: Response Status: {response.status_code}")
+            if response.status_code >= 400:
+                print("ERROR PAYLOAD:", json.dumps(payload))
+                print("ERROR RESPONSE:", response.text)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.Timeout:
+            print("ERROR: Request to LLM timed out after 60 seconds.")
+            raise
+        except Exception as e:
+            print(f"ERROR: LLM Request failed: {str(e)}")
+            raise
+
+    def _generate(self, messages: List[BaseMessage], stop: Optional[List[str]] = None, **kwargs: Any) -> ChatResult:
+        resp_json = self._send_request(messages, **kwargs)
+        message_data = resp_json["choices"][0]["message"]
+        content = message_data.get("content", "") or ""
+        tool_calls = parse_tool_calls(message_data["tool_calls"]) if message_data.get("tool_calls") else []
+        ai_message = AIMessage(content=content, tool_calls=tool_calls)
+        return ChatResult(generations=[ChatGeneration(message=ai_message)])
+
+    def bind_tools(self, tools: Sequence[Union[Dict, Type[BaseModel], Callable, BaseTool]], **kwargs: Any) -> Runnable:
+        formatted_tools = [convert_to_openai_tool(tool) for tool in tools]
+        return self.bind(tools=formatted_tools, **kwargs)
+
+    async def _agenerate(self, messages: List[BaseMessage], stop: Optional[List[str]] = None, **kwargs: Any) -> ChatResult:
+        loop = asyncio.get_event_loop()
+        resp_json = await loop.run_in_executor(None, lambda: self._send_request(messages, **kwargs))
+        message_data = resp_json["choices"][0]["message"]
+        content = message_data.get("content", "") or ""
+        tool_calls = parse_tool_calls(message_data["tool_calls"]) if message_data.get("tool_calls") else []
+        ai_message = AIMessage(content=content, tool_calls=tool_calls)
+        return ChatResult(generations=[ChatGeneration(message=ai_message)])
+
+    async def _astream(
+        self,
+        messages: List[BaseMessage],
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[Any] = None,
+        **kwargs: Any,
+    ) -> AsyncIterator[ChatGenerationChunk]:
+        from typing import AsyncIterator
+        from langchain_core.messages import AIMessageChunk
+        import aiohttp
+
+        payload = self._prepare_payload(messages, **kwargs)
+        payload["stream"] = True
+        url = f"{self.base_url}/v1/chat/completions"
+        print(f"DEBUG: Streaming from {url}")
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=payload, timeout=60) as response:
+                    if response.status >= 400:
+                        text = await response.text()
+                        print(f"ERROR STREAM RESPONSE: {response.status} - {text}")
+                        response.raise_for_status()
+
+                    async for line_bytes in response.content:
+                        line = line_bytes.decode("utf-8").strip()
+                        if not line:
+                            continue
+                        if line == "data: [DONE]":
+                            break
+                        if line.startswith("data: "):
+                            data_str = line[len("data: "):]
+                            try:
+                                chunk_data = json.loads(data_str)
+                                choice = chunk_data.get("choices", [{}])[0]
+                                delta = choice.get("delta", {})
+                                content = delta.get("content", "")
+                                tool_calls = delta.get("tool_calls", [])
+
+                                if content or tool_calls:
+                                    tc_chunks = []
+                                    for tc in tool_calls:
+                                        tc_chunks.append({
+                                            "index": tc.get("index", 0),
+                                            "id": tc.get("id"),
+                                            "name": tc.get("function", {}).get("name"),
+                                            "args": tc.get("function", {}).get("arguments")
+                                        })
+                                    message_chunk = AIMessageChunk(content=content, tool_call_chunks=tc_chunks)
+                                    generation_chunk = ChatGenerationChunk(message=message_chunk)
+                                    yield generation_chunk
+
+                                    if run_manager:
+                                        await run_manager.on_llm_new_token(content)
+                            except Exception:
+                                pass
+        except Exception as e:
+            print(f"ERROR: LLM Stream failed: {str(e)}")
+            raise
 
 
 @dataclass
@@ -56,25 +200,18 @@ class BaseLLMProvider(ABC):
         """Fetch available models from the provider"""
         pass
 
-    @abstractmethod
-    async def generate(self, model: str, prompt: str, **kwargs) -> str:
-        """Generate a response text for a given prompt"""
-        pass
-
-
-
 
 class OpenAICompatibleProvider(BaseLLMProvider):
     """Base class for OpenAI-compatible providers (Groq, Mistral, Cerebras, OpenRouter, etc.)"""
     
-    async def generate(self, model: str, prompt: str, **kwargs) -> str:
+    def build_chat_module(self, model: str, **kwargs):
         if not self.api_key and self.provider_info.requires_api_key:
             logger.error(f"API key is not configured for {self.provider_info.display_name}.")
             raise ValueError(f"API key is not configured for {self.provider_info.display_name}.")
               
         provider_id = self.provider_info.id
         
-        # Instantiate correct LangChain class based on provider
+        # Instantiate correct LangChain class based on provider with streaming enabled
         match provider_id:
             case "openrouter":
                 llm = ChatOpenAI(
@@ -82,8 +219,6 @@ class OpenAICompatibleProvider(BaseLLMProvider):
                     api_key=self.api_key,
                     base_url=self.base_url,
                     temperature=kwargs.get("temperature", 0.7),
-                    top_p=kwargs.get("top_p", 0.9),
-                    max_tokens=kwargs.get("max_tokens", 100000),
                     stop=kwargs.get("stop", None),
                     streaming=True
                 )
@@ -92,8 +227,6 @@ class OpenAICompatibleProvider(BaseLLMProvider):
                     model=model,
                     api_key=self.api_key,
                     temperature=kwargs.get("temperature", 0.7),
-                    top_p=kwargs.get("top_p", 0.9),
-                    max_tokens=kwargs.get("max_tokens", 100000),
                     stop=kwargs.get("stop", None),
                     streaming=True
                 )
@@ -102,8 +235,6 @@ class OpenAICompatibleProvider(BaseLLMProvider):
                     model=model,
                     api_key=self.api_key,
                     temperature=kwargs.get("temperature", 0.7),
-                    top_p=kwargs.get("top_p", 0.9),
-                    max_tokens=kwargs.get("max_tokens", 100000),
                     stop=kwargs.get("stop", None),
                     streaming=True
                 )
@@ -111,45 +242,44 @@ class OpenAICompatibleProvider(BaseLLMProvider):
                 llm = ChatMistralAI(
                     model=model,
                     api_key=self.api_key,
-                temperature=kwargs.get("temperature", 0.7),
-                top_p=kwargs.get("top_p", 0.9),
-                max_tokens=kwargs.get("max_tokens", 100000),
-                stop=kwargs.get("stop", None),
-                streaming=True
-            )
-        
+                    temperature=kwargs.get("temperature", 0.7),
+                    stop=kwargs.get("stop", None),
+                    streaming=True
+                )
             case "cerebras":
                 llm = ChatCerebras(
                     model=model,
                     api_key=self.api_key,
                     temperature=kwargs.get("temperature", 0.7),
-                    top_p=kwargs.get("top_p", 0.9),
-                    max_tokens=kwargs.get("max_tokens", 100000),
                     stop=kwargs.get("stop", None),
                     streaming=True
                 )
             case "nvidia":
                 llm = ChatNVIDIA(
-                model=model,
-                api_key=self.api_key,
-                base_url=self.base_url,
-                temperature=kwargs.get("temperature", 0.7),
-                top_p=kwargs.get("top_p", 0.9),
-                max_tokens=kwargs.get("max_tokens", 100000),
-                stop=kwargs.get("stop", None),
-                streaming=True
-            )
+                    model=model,
+                    api_key=self.api_key,
+                    base_url=self.base_url,
+                    temperature=kwargs.get("temperature", 0.7),
+                    stop=kwargs.get("stop", None),
+                    streaming=True
+                )
             case "sambanova":
                 llm = ChatSambaNova(
-                model=model,
-                api_key=self.api_key,
-                base_url=self.base_url,
-                temperature=kwargs.get("temperature", 0.7),
-                top_p=kwargs.get("top_p", 0.9),
-                max_tokens=kwargs.get("max_tokens", 100000),
-                stop=kwargs.get("stop", None),
-                streaming=True
-            )
+                    model=model,
+                    api_key=self.api_key,
+                    base_url=self.base_url,
+                    temperature=kwargs.get("temperature", 0.7),
+                    stop=kwargs.get("stop", None),
+                    streaming=True
+                )
+            case "selfhosted":
+                llm = ChatSelfHosted(
+                    base_url=self.base_url,
+                    model_name=model,
+                    temperature=kwargs.get("temperature", 0.7),
+                    stop=kwargs.get("stop", None),
+                    streaming=True
+                )
             case _:
                 # Fallback to ChatOpenAI for any other OpenAI-compatible provider
                 llm = ChatOpenAI(
@@ -157,49 +287,10 @@ class OpenAICompatibleProvider(BaseLLMProvider):
                     api_key=self.api_key,
                     base_url=self.base_url,
                     temperature=kwargs.get("temperature", 0.7),
-                    top_p=kwargs.get("top_p", 0.9),
-                    max_tokens=kwargs.get("max_tokens", 100000),
                     stop=kwargs.get("stop", None),
                     streaming=True
-            )
-
-        logger.info(f"Generating content using {self.provider_info.display_name} model: {model}")
-        try:
-            run_id = kwargs.get("run_id", "")
-            
-            full_response = []
-            async for chunk in llm.astream(prompt):
-                token = chunk.content
-                if token:
-                    full_response.append(token)
-                    event = {
-                        "event": "token",
-                        "source": provider_id,
-                        "token": token,
-                        "run_id": run_id
-                    }
-                    try:
-                        await kafka_client.publish("synchropia-agent-responses", event)
-                    except Exception as ke:
-                        logger.warning(f"Failed to publish token to Kafka: {ke}")
-            
-            final_text = "".join(full_response)
-            end_event = {
-                "event": "agent_response",
-                "source": provider_id,
-                "text": final_text,
-                "run_id": run_id
-            }
-            try:
-                await kafka_client.publish("synchropia-agent-responses", end_event)
-            except Exception as ke:
-                logger.warning(f"Failed to publish final response to Kafka: {ke}")
-                
-            logger.success(f"Successfully generated response from {self.provider_info.display_name} model: {model}")
-            return final_text
-        except Exception as e:
-            logger.error(f"Exception during generate for {self.provider_info.display_name} model {model}: {e}")
-            raise
+                )
+        return llm
 
 
 class GoogleAIProvider(OpenAICompatibleProvider):
@@ -231,6 +322,17 @@ class GoogleAIProvider(OpenAICompatibleProvider):
         except Exception as e:
             logger.error(f"Exception during get_models for Google: {e}")
             return []
+
+    async def generate(self, model: str, prompt: str, **kwargs) -> str:
+        # Legacy fallback method
+        llm = self.build_chat_module(model, **kwargs)
+        logger.info(f"Generating content using direct fallback method: {model}")
+        try:
+            res = await llm.ainvoke(prompt)
+            return res.content
+        except Exception as e:
+            logger.error(f"Exception during generation: {e}")
+            raise
 
 
 class GroqProvider(OpenAICompatibleProvider):
@@ -394,16 +496,39 @@ class SamanovaProvider(OpenAICompatibleProvider):
             return []
 
 
+class SelfHostedProvider(OpenAICompatibleProvider):
+    async def get_models(self) -> List[ModelInfo]:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(f"{self.base_url}/v1/models") as response:
+                    if response.status != 200:
+                        logger.warning(f"Error fetching selfhosted models: HTTP {response.status}")
+                        return [ModelInfo(id="Qwen3.5-4B", name="Qwen3.5-4B", context_length=8192)]
+                    data = await response.json()
+                    return [
+                        ModelInfo(
+                            id=model.get("id", ""),
+                            name=model.get("id", ""),
+                            context_length=model.get("context_length", 8192)
+                        )
+                        for model in data.get("data", [])
+                    ]
+        except Exception as e:
+            logger.warning(f"Could not connect to selfhosted server at {self.base_url}: {e}. Returning default model info.")
+            return [ModelInfo(id="Qwen3.5-4B", name="Qwen3.5-4B", context_length=8192)]
+
+
 class UnifiedLLMGateway:
     """Main router for managing LLM providers and models"""
     
     def __init__(self):
         self.providers: Dict[str, BaseLLMProvider] = {}
         self._initialize_providers()
-    
+
     def _initialize_providers(self):
         """Initialize all available providers"""
         logger.info("Initializing UnifiedLLMGateway providers...")
+        
         # Google Gemini
         google_info = ProviderInfo(
             id="google",
@@ -508,12 +633,41 @@ class UnifiedLLMGateway:
             supports_embeddings=False
         )
         self.providers["openrouter"] = OpenRouterProvider(openrouter_info, settings.OPENROUTER_API_KEY)
+
+        # Self-Hosted
+        selfhosted_info = ProviderInfo(
+            id="selfhosted",
+            name="selfhosted",
+            display_name="Self-Hosted",
+            base_url="http://127.0.0.1:8080",
+            logo_url="https://github.com/vllm-project/vllm/raw/main/docs/source/assets/vllm-logo-text-light.png",
+            description="Local self-hosted OpenAI-compatible LLM server",
+            requires_api_key=False,
+            supports_streaming=True,
+            supports_tools=True,
+            supports_embeddings=False
+        )
+        self.providers["selfhosted"] = SelfHostedProvider(selfhosted_info, None)
+
         logger.success("UnifiedLLMGateway providers initialized successfully.")
 
     def get_provider(self, provider_id: str) -> Optional[BaseLLMProvider]:
         """Get a provider by ID"""
         return self.providers.get(provider_id)
     
+    def get_chat_model(self, provider_id: str, model_id: str, **kwargs) -> Any:
+        """Get the instantiated LangChain ChatModel instance configured for streaming."""
+        provider = self.get_provider(provider_id)
+        if not provider:
+            logger.error(f"Provider '{provider_id}' is not supported.")
+            raise ValueError(f"Provider '{provider_id}' is not supported.")
+        
+        if hasattr(provider, "build_chat_module"):
+            return provider.build_chat_module(model_id, **kwargs)
+        else:
+            logger.error(f"Provider '{provider_id}' does not support chat module retrieval.")
+            raise NotImplementedError(f"Provider '{provider_id}' does not support chat module retrieval.")
+
     async def get_all_providers(self) -> List[ProviderInfo]:
         """Get all available providers"""
         return [provider.provider_info for provider in self.providers.values()]
@@ -526,20 +680,17 @@ class UnifiedLLMGateway:
         return []
 
     async def generate_response(self, provider_id: str, model_id: str, prompt: str, **kwargs) -> str:
-        """Generate response using the specified provider, wrapping with semantic cache lookup and update."""
-        logger.info(f"Gateway request received: provider='{provider_id}', model='{model_id}'")
+        """Fallback non-agent direct generation endpoint using semantic cache."""
+        logger.info(f"Direct gateway request received: provider='{provider_id}', model='{model_id}'")
         
-        # 1. Lookup in semantic cache
         try:
             cached_res = await semantic_cache.lookup(prompt)
             if cached_res is not None:
                 logger.success("Gateway request satisfied from semantic cache.")
                 run_id = kwargs.get("run_id")
                 if run_id:
-                    import asyncio
                     words = cached_res.split(" ")
                     for i, word in enumerate(words):
-                        # Restore the space between words
                         token = word + (" " if i < len(words) - 1 else "")
                         token_event = {
                             "event": "token",
@@ -569,26 +720,24 @@ class UnifiedLLMGateway:
         except Exception as e:
             logger.warning(f"Failed to lookup in semantic cache: {e}")
 
-        # 2. Get provider
         provider = self.get_provider(provider_id)
         if not provider:
-            logger.error(f"Provider '{provider_id}' is not supported or not configured.")
-            raise ValueError(f"Provider '{provider_id}' is not supported or not configured.")
+            raise ValueError(f"Provider '{provider_id}' is not supported.")
 
-        # 3. Generate response from provider API
         try:
             response_text = await provider.generate(model_id, prompt, **kwargs)
         except Exception as e:
-            logger.error(f"Failed to generate response from provider '{provider_id}' using model '{model_id}': {e}")
+            logger.error(f"Failed to generate response: {e}")
             raise
 
-        # 4. Save response to semantic cache
         try:
             await semantic_cache.set(prompt, response_text)
-            logger.success("Successfully saved generated response to semantic cache.")
         except Exception as e:
-            logger.warning(f"Failed to save response to semantic cache: {e}")
+            logger.warning(f"Failed to save to semantic cache: {e}")
 
         return response_text
 
 unified_llm_gateway = UnifiedLLMGateway()
+
+if __name__ == "__main__":
+    print(asyncio.run(unified_llm_gateway.get_models_for_provider("groq")))

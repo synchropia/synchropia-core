@@ -125,7 +125,7 @@ class GitHubAPIClient:
             ```
         """
         self.app_id = app_id or settings.GITHUB_APP_ID
-        self.private_key_path = private_key_path or settings.GITHUB_PRIVATE_KEY_PATH
+        self.private_key_path = private_key_path or settings.GITHUB_APP_PRIVATE_KEY_PATH
         if self.private_key_path:
             self.private_key_path = self.private_key_path.strip('"\'')
         self.installation_id = installation_id or settings.GITHUB_INSTALLATION_ID
@@ -2002,4 +2002,11 @@ __all__ = [
 
 
 
-
+if __name__ == "__main__":
+    github_client = GitHubAPIClient()
+    tool = ListRepositoriesTool(github_client=github_client)
+    repos = tool.invoke({
+        "owner": "synchropia",
+    })
+    print(repos)
+    

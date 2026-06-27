@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     GITHUB_APP_PRIVATE_KEY_PATH: str
     GITHUB_INSTALLATION_ID: str
     
+    # Mem0 credentials 
+    MEM0_API_KEY:str
+
     # Jira Integration Credentials
     JIRA_API_TOKEN: str
     JIRA_URL: str 

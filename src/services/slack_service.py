@@ -18,10 +18,6 @@ from langchain_core.callbacks import (
     AsyncCallbackManagerForToolRun,
     CallbackManagerForToolRun,
 )
-import os 
-from dotenv import load_dotenv 
-
-load_dotenv()
 
 
 from abc import ABC, abstractmethod
@@ -29,6 +25,7 @@ from langchain_core.tools import BaseTool
 from langchain_core.tools.base import ArgsSchema
 
 from src.utils.logger import logger 
+from src.config.settings import settings
 
 class ToolInputSchema(BaseModel):
     """Define your input schema in subclasses via args_schema override."""
@@ -862,9 +859,10 @@ class FetchLatestMessageTool(AbstractTool):
         except SlackApiError as e:
             return json.dumps({"success": False, "error": e.response["error"]})
 
+slack_client = SlackAPIClient(token=settings.SLACK_BOT_TOKEN)
 
 __all__ = [
-    "SlackAPIClient",
+    "slack_client",
     "SendMessageTool",
     "CreateChannelTool",
     "InviteUsersTool",
