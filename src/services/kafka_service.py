@@ -112,11 +112,11 @@ class KafkaAgentCallbackHandler(BaseCallbackHandler):
             return metadata["agent_name"]
         return self.default_agent_name
 
-    def _get_run_id(self, kwargs: Any) -> str:
+    def _get_run_id(self, run_id: Any) -> str:
         """Resolve the parent agent run ID if configured, else fallback to the step-level run ID."""
         if self.run_id:
             return str(self.run_id)
-        return str(kwargs.get("run_id", ""))
+        return str(run_id) if run_id else ""
 
     def _safe_publish(self, topic: str, event: dict) -> None:
         """Publish an event to Kafka in a thread-safe, loop-safe manner."""
@@ -150,18 +150,35 @@ class KafkaAgentCallbackHandler(BaseCallbackHandler):
         except Exception as e:
             logger.error(f"Kafka fallback publish failed: {e}")
 
-    def on_llm_new_token(self, token: str, **kwargs: Any) -> None:
+    def on_llm_new_token(
+        self,
+        token: str | list[str | dict[str, Any]],
+        *,
+        chunk: Optional[Any] = None,
+        run_id: Any,
+        parent_run_id: Optional[Any] = None,
+        tags: Optional[list[str]] = None,
+        **kwargs: Any,
+    ) -> Any:
         """Publish individual generated tokens for real-time streaming."""
         agent_name = self._get_agent_name(kwargs.get("metadata"))
         event = {
             "event": "token",
             "source": agent_name,
-            "token": token,
-            "run_id": self._get_run_id(kwargs)
+            "token": token if isinstance(token, str) else json.dumps(token),
+            "run_id": self._get_run_id(run_id)
         }
         self._safe_publish("synchropia-agent-responses", event)
 
-    def on_llm_end(self, response: LLMResult, **kwargs: Any) -> None:
+    def on_llm_end(
+        self,
+        response: LLMResult,
+        *,
+        run_id: Any,
+        parent_run_id: Optional[Any] = None,
+        tags: Optional[list[str]] = None,
+        **kwargs: Any,
+    ) -> Any:
         """Publish the final generation text of the agent."""
         agent_name = self._get_agent_name(kwargs.get("metadata"))
         for generation_list in response.generations:
@@ -170,36 +187,94 @@ class KafkaAgentCallbackHandler(BaseCallbackHandler):
                     "event": "agent_response",
                     "source": agent_name,
                     "text": generation.text,
-                    "run_id": self._get_run_id(kwargs)
+                    "run_id": self._get_run_id(run_id)
                 }
                 self._safe_publish("synchropia-agent-responses", event)
 
-    def on_tool_start(
-        self, serialized: Dict[str, Any], input_str: str, **kwargs: Any
-    ) -> None:
-        """Publish tool call activation details."""
+    def on_llm_error(
+        self,
+        error: BaseException,
+        *,
+        run_id: Any,
+        parent_run_id: Optional[Any] = None,
+        tags: Optional[list[str]] = None,
+        **kwargs: Any,
+    ) -> Any:
+        """Publish LLM error events."""
         agent_name = self._get_agent_name(kwargs.get("metadata"))
+        event = {
+            "event": "error",
+            "source": agent_name,
+            "message": str(error),
+            "run_id": self._get_run_id(run_id)
+        }
+        self._safe_publish("synchropia-agent-responses", event)
+
+    def on_tool_start(
+        self,
+        serialized: Dict[str, Any],
+        input_str: str,
+        *,
+        run_id: Any,
+        parent_run_id: Optional[Any] = None,
+        tags: Optional[list[str]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> Any:
+        """Publish tool call activation details."""
+        meta = metadata or kwargs.get("metadata")
+        agent_name = self._get_agent_name(meta)
         tool_name = serialized.get("name", "unknown_tool")
         event = {
             "event": "tool_call",
             "source": agent_name,
             "tool": tool_name,
             "input": input_str,
-            "run_id": self._get_run_id(kwargs)
+            "run_id": self._get_run_id(run_id)
         }
         self._safe_publish("synchropia-tool-calls", event)
 
-    def on_tool_end(self, output: Any, **kwargs: Any) -> None:
+    def on_tool_end(
+        self,
+        output: Any,
+        *,
+        run_id: Any,
+        parent_run_id: Optional[Any] = None,
+        **kwargs: Any,
+    ) -> Any:
         """Publish tool execution outputs."""
         agent_name = self._get_agent_name(kwargs.get("metadata"))
         event = {
             "event": "tool_response",
             "source": agent_name,
             "output": str(output),
-            "run_id": self._get_run_id(kwargs)
+            "run_id": self._get_run_id(run_id)
+        }
+        self._safe_publish("synchropia-tool-responses", event)
+
+    def on_tool_error(
+        self,
+        error: BaseException,
+        *,
+        run_id: Any,
+        parent_run_id: Optional[Any] = None,
+        **kwargs: Any,
+    ) -> Any:
+        """Publish tool execution errors."""
+        agent_name = self._get_agent_name(kwargs.get("metadata"))
+        event = {
+            "event": "tool_error",
+            "source": agent_name,
+            "error": str(error),
+            "run_id": self._get_run_id(run_id)
         }
         self._safe_publish("synchropia-tool-responses", event)
 
 kafka_client = KafkaAPIClient()
 
 __all__ = ["KafkaAPIClient", "KafkaAgentCallbackHandler", "kafka_client"]
+
+if __name__ == "__main__":
+    callback_handler = KafkaAgentCallbackHandler(kafka_client)
+    
+    

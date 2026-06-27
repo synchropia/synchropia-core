@@ -13,30 +13,8 @@ from src.services.kafka_service import KafkaAgentCallbackHandler, kafka_client
 
 from src.agents.architect.prompt import ARCHITECT_SYSTEM_PROMPT
 from src.agents.architect.harness import ArchitectAgentHarness
-from src.agents.architect.guardrails import input_guardrail, output_guardrail
-from src.agents.architect.middleware import (
-    AgentRequest,
-    AgentResponse,
-    MiddlewarePipeline,
-    MetadataInjectionMiddleware,
-    LoggingMiddleware,
-    RateLimitMiddleware,
-    TokenBudgetMiddleware,
-    RetryMiddleware,
-)
 
-
-# ---------------------------------------------------------------------------
-# Middleware pipeline (can be customised per-deployment)
-# ---------------------------------------------------------------------------
-
-architect_pipeline = MiddlewarePipeline([
-    MetadataInjectionMiddleware(static_metadata={"agent": "architect"}),
-    LoggingMiddleware(),
-    RateLimitMiddleware(max_rpm=30),
-    TokenBudgetMiddleware(max_input_tokens=8_192),
-    RetryMiddleware(max_retries=2),
-])
+from langchain_core.callbacks import BaseCallbackHandler
 
 
 # ---------------------------------------------------------------------------
@@ -77,7 +55,7 @@ async def build_architect_agent(
 # Core invocation helper
 # ---------------------------------------------------------------------------
 
-from langchain_core.callbacks import BaseCallbackHandler
+
 
 class ConsoleStreamingCallbackHandler(BaseCallbackHandler):
     """Callback handler to stream LLM tokens directly to the console."""
