@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     
     # Mem0 credentials 
     MEM0_API_KEY:str
+    
+    # SonarQube credentials 
+    SONARQUBE_API_KEY:str 
+    SONARQUBE_BASE_URL: str = "https://sonarcloud.io"
 
     # Jira Integration Credentials
     JIRA_API_TOKEN: str
@@ -44,19 +48,23 @@ class Settings(BaseSettings):
     # Kafka Configuration
     KAFKA_BOOTSTRAP_SERVERS: str = "localhost:9092"
     
+    # Cohere Embedding Model 
+    COHERE_EMBED_MODEL: str 
+
     # Auth Configuration
     JWT_SECRET_KEY: str 
     JWT_ALGORITHM: str = "HS256"
 
     # Semantic Caching Configuration
-    SEMANTIC_CACHE_THRESHOLD: float = 0.85
+    SEMANTIC_CACHE_THRESHOLD: float = 0.95
     SEMANTIC_CACHE_TTL: int = 86400  # Default 24 hours
 
     # LLM API Keys
     GROQ_API_KEY: Optional[str] = None
+    OPENROUTER_API_KEY:Optional[str] = None
     CEREBRAS_API_KEY: Optional[str] = None
     GOOGLE_API_KEY: Optional[str] = None
-    OPENROUTER_API_KEY: Optional[str] = None
+    COHERE_API_KEY: Optional[str] = None
     MISTRAL_API_KEY: Optional[str] = None
     SAMBANOVA_API_KEY: Optional[str] = None
     NVIDIA_API_KEY: Optional[str] = None

@@ -15,7 +15,7 @@ Synchropia is a state-of-the-art multi-agent swarm orchestration and incident ma
 
 ---
 
-## Directory Structure
+## Directory Structure : development , deployment 
 
 ```
 synchropia/

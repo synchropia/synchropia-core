@@ -2,12 +2,12 @@ import time
 import sqlite3
 from typing import Dict, List, Optional
 from loguru import logger
-from src.services.redis_client import RedisAPIClient
+from src.services.redis_client import redis_client
 
 class RedisRateLimiter:
     """Sliding window rate limiter backed by Redis with local SQLite database fallback."""
 
-    def __init__(self, redis_client: Optional[RedisAPIClient] = None, db_path: str = "synchropia_rate_limit.db"):
+    def __init__(self,db_path: str = "synchropia_rate_limit.db"):
         self.redis_client = redis_client
         self.db_path = db_path
         
@@ -96,3 +96,4 @@ class RedisRateLimiter:
         except Exception as e:
             logger.error(f"[RateLimiter] SQLite rate limit check failed: {e}. Defaulting to allowing request.")
             return True
+rate_limiter = RedisRateLimiter()

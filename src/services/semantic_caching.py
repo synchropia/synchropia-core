@@ -6,9 +6,9 @@ from typing import Optional, List, Dict, Any
 from dotenv import load_dotenv
 
 # Import langchain, settings and logger
-from src.core.get_embedding import OpenRouterEmbeddings
+from src.core.get_embedding import CohereEmbeddings
 from src.config.settings import settings
-from src.services.redis_client import RedisAPIClient
+from src.services.redis_client import redis_client
 from src.utils.logger import logger  
 
 load_dotenv()
@@ -21,12 +21,10 @@ class SemanticCache:
     
     def __init__(
         self,
-        redis_client: Optional[RedisAPIClient] = None,
         threshold: Optional[float] = None,
-        ttl: Optional[int] = None,
-        embedding_model: str = "models/text-embedding-004"
+        ttl: Optional[int] = None
     ):
-        self.redis_client = redis_client or RedisAPIClient()
+        self.redis_client = redis_client
         self.threshold = threshold or settings.SEMANTIC_CACHE_THRESHOLD
         self.ttl = ttl or settings.SEMANTIC_CACHE_TTL
         self.prefix = "semantic_cache:entry:"
@@ -38,8 +36,8 @@ class SemanticCache:
         
         # Initialize OpenRouter Embeddings client
         try:
-            self.embeddings = OpenRouterEmbeddings()
-            logger.success(f"Semantic Cache initialized with embedding model: {embedding_model}")
+            self.embeddings = CohereEmbeddings(model=settings.COHERE_EMBED_MODEL)
+            logger.success(f"Semantic Cache initialized with embedding model: {self.embeddings}")
         except Exception as e:
             logger.error(f"Failed to initialize OpenRouterEmbeddings: {e}. Semantic cache will fallback to cache misses.")
             self.embeddings = None

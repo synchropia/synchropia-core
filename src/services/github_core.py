@@ -25,7 +25,6 @@ from src.utils.logger import logger
 class ToolInputSchema(BaseModel):
     """Define your input schema in subclasses via args_schema override."""
 
-
 class AbstractTool(BaseTool, ABC):
     name: str
     description: str
@@ -325,6 +324,26 @@ class ListRepositoriesInput(BaseModel):
         default=30, description="Number of repositories per page (max 100)"
     )
 
+class ListRepositoriesOutput(BaseModel):
+    id: int 
+    name: str 
+    full_name: str 
+    description: Optional[str] = None 
+    private: bool 
+    visibility: str 
+    language: Optional[str] = None 
+    default_branch: str 
+    html_url: str 
+    clone_url: str 
+    created_at: str 
+    updated_at: str 
+    pushed_at: str 
+    size: int 
+    topics: list 
+    archived: bool 
+    has_pages: bool 
+    owner: str 
+    
 
 class ListRepositoriesTool(AbstractTool):
     """
@@ -402,7 +421,7 @@ class ListRepositoriesTool(AbstractTool):
         repo_type: str = "all",
         per_page: int = 30,
         run_manager: Optional[CallbackManagerForToolRun] = None,
-    ):
+    ) -> List[ListRepositoriesOutput]:
         """
         Synchronously list repositories for a GitHub user or organization.
 
@@ -422,9 +441,34 @@ class ListRepositoriesTool(AbstractTool):
         Raises:
             Exception: For API errors, authentication issues, or network problems.
         """
-        endpoint = f"users/{owner}/repos"
+        endpoint = f"orgs/{owner}/repos"
         params = {"type": repo_type, "per_page": per_page, "sort": "updated"}
-        return self.github_client.make_request("GET", endpoint, params)
+        response = self.github_client.make_request("GET", endpoint, params)
+        
+        if "error" in response and response.get("status_code") == 404:
+            endpoint = f"users/{owner}/repos"
+        response = self.github_client.make_request("GET", endpoint, params)
+        return [ListRepositoriesOutput(
+            id=repo["id"],
+            name=repo["name"],
+            full_name=repo["full_name"],
+            description=repo["description"],
+            private=repo["private"],
+            visibility=repo["visibility"],
+            language=repo["language"],
+            default_branch=repo["default_branch"],
+            html_url=repo["html_url"],
+            clone_url=repo["clone_url"],
+            created_at=repo["created_at"],
+            updated_at=repo["updated_at"],
+            pushed_at=repo["pushed_at"],
+            size=repo["size"],
+            topics=repo["topics"],
+            archived=repo["archived"],
+            has_pages=repo["has_pages"],
+            owner=repo["owner"]["login"]
+        ) for repo in response]
+        
 
     async def _arun(
         self,
@@ -432,7 +476,7 @@ class ListRepositoriesTool(AbstractTool):
         repo_type: str = "all",
         per_page: int = 30,
         run_manager: Optional[AsyncCallbackManagerForToolRun] = None,
-    ):
+    ) -> List[ListRepositoriesOutput]:
         """
         Asynchronously list repositories for a GitHub user or organization.
 
@@ -452,7 +496,7 @@ class ListRepositoriesTool(AbstractTool):
         Raises:
             Exception: For API errors, authentication issues, or network problems.
         """
-        endpoint = f"users/{owner}/repos"
+        endpoint = f"orgs/{owner}/repos"
         params = {"type": repo_type, "per_page": per_page, "sort": "updated"}
         return await self.github_client.make_async_request("GET", endpoint, params)
 
@@ -1342,6 +1386,50 @@ class ListCommitsTool(AbstractTool):
         return await self.github_client.make_async_request("GET", endpoint, params)
 
 
+class CompareCommitsInput(BaseModel):
+    owner: str = Field(description="Repository owner username")
+    repo: str = Field(description="Repository name")
+    base: str = Field(description="The base commit SHA or branch/tag name to compare")
+    head: str = Field(description="The head commit SHA or branch/tag name to compare")
+    per_page: int = Field(default=30, description="Number of commits per page")
+    page: int = Field(default=1, description="Page number of the results to fetch")
+
+
+class CompareCommitsTool(AbstractTool):
+    name: str = "compare_commits"
+    description: str = "Compare code changes between two commits (or branches/tags) using commit hashes"
+    args_schema: Type[BaseModel] = CompareCommitsInput
+    github_client: GitHubAPIClient
+
+    def _run(
+        self,
+        owner: str,
+        repo: str,
+        base: str,
+        head: str,
+        per_page: int = 30,
+        page: int = 1,
+        run_manager: Optional[CallbackManagerForToolRun] = None,
+    ):
+        endpoint = f"repos/{owner}/{repo}/compare/{base}...{head}"
+        params = {"per_page": per_page, "page": page}
+        return self.github_client.make_request("GET", endpoint, params)
+
+    async def _arun(
+        self,
+        owner: str,
+        repo: str,
+        base: str,
+        head: str,
+        per_page: int = 30,
+        page: int = 1,
+        run_manager: Optional[AsyncCallbackManagerForToolRun] = None,
+    ):
+        endpoint = f"repos/{owner}/{repo}/compare/{base}...{head}"
+        params = {"per_page": per_page, "page": page}
+        return await self.github_client.make_async_request("GET", endpoint, params)
+
+
 class ListBranchesInput(BaseModel):
     owner: str = Field(description="Repository owner username")
     repo: str = Field(description="Repository name")
@@ -1653,7 +1741,15 @@ class GetFileContentTool(AbstractTool):
         params = {}
         if ref:
             params["ref"] = ref
-        return self.github_client.make_request("GET", endpoint, params)
+        res = self.github_client.make_request("GET", endpoint, params)
+        if isinstance(res, dict) and res.get("encoding") == "base64" and "content" in res:
+            try:
+                import base64
+                clean_content = res["content"].replace("\n", "").replace("\r", "")
+                return base64.b64decode(clean_content).decode("utf-8", errors="replace")
+            except Exception:
+                pass
+        return res
 
     async def _arun(
         self,
@@ -1667,7 +1763,15 @@ class GetFileContentTool(AbstractTool):
         params = {}
         if ref:
             params["ref"] = ref
-        return await self.github_client.make_async_request("GET", endpoint, params)
+        res = await self.github_client.make_async_request("GET", endpoint, params)
+        if isinstance(res, dict) and res.get("encoding") == "base64" and "content" in res:
+            try:
+                import base64
+                clean_content = res["content"].replace("\n", "").replace("\r", "")
+                return base64.b64decode(clean_content).decode("utf-8", errors="replace")
+            except Exception:
+                pass
+        return res
 
 
 class CreateOrUpdateFileInput(BaseModel):
@@ -1971,6 +2075,87 @@ class RequestReviewerTool(AbstractTool):
         return await self.github_client.make_async_request("POST", endpoint, data)
 
 
+class GetTreeInput(BaseModel):
+    owner: str = Field(description="Repository owner username")
+    repo: str = Field(description="Repository name")
+    branch: str = Field(
+        default="",
+        description="Branch name (defaults to repository's default branch)",
+    )
+
+
+class GetTreeTool(AbstractTool):
+    name: str = "get_tree"
+    description: str = (
+        "Recursively fetches the entire tree structure of the codebase, "
+        "whether directories or files, and retrieves relative path of each directory or file path."
+    )
+    args_schema: Type[BaseModel] = GetTreeInput
+    github_client: GitHubAPIClient
+
+    def _run(
+        self,
+        owner: str,
+        repo: str,
+        branch: str = "",
+        run_manager: Optional[CallbackManagerForToolRun] = None,
+    ):
+        if not branch:
+            repo_info = self.github_client.make_request("GET", f"repos/{owner}/{repo}")
+            if "error" in repo_info:
+                return repo_info
+            branch = repo_info.get("default_branch", "main")
+
+        endpoint = f"repos/{owner}/{repo}/git/trees/{branch}?recursive=1"
+        tree_response = self.github_client.make_request("GET", endpoint)
+        if "error" in tree_response:
+            return tree_response
+
+        results = []
+        for entry in tree_response.get("tree", []):
+            item = {
+                "path": entry.get("path"),
+                "type": entry.get("type"),
+            }
+            if "sha" in entry:
+                item["sha"] = entry["sha"]
+            if "size" in entry:
+                item["size"] = entry["size"]
+            results.append(item)
+        return results
+
+    async def _arun(
+        self,
+        owner: str,
+        repo: str,
+        branch: str = "",
+        run_manager: Optional[AsyncCallbackManagerForToolRun] = None,
+    ):
+        if not branch:
+            repo_info = await self.github_client.make_async_request("GET", f"repos/{owner}/{repo}")
+            if "error" in repo_info:
+                return repo_info
+            branch = repo_info.get("default_branch", "main")
+
+        endpoint = f"repos/{owner}/{repo}/git/trees/{branch}?recursive=1"
+        tree_response = await self.github_client.make_async_request("GET", endpoint)
+        if "error" in tree_response:
+            return tree_response
+
+        results = []
+        for entry in tree_response.get("tree", []):
+            item = {
+                "path": entry.get("path"),
+                "type": entry.get("type"),
+            }
+            if "sha" in entry:
+                item["sha"] = entry["sha"]
+            if "size" in entry:
+                item["size"] = entry["size"]
+            results.append(item)
+        return results
+
+
 __all__ = [
     "GitHubAPIClient",
     "ListRepositoriesTool",
@@ -1986,6 +2171,7 @@ __all__ = [
     "TriggerWorkflowTool",
     "CancelWorkflowRunTool",
     "ListCommitsTool",
+    "CompareCommitsTool",
     "ListBranchesTool",
     "CreateBranchTool",
     "ListDeploymentsTool",
@@ -1997,6 +2183,7 @@ __all__ = [
     "SearchRepositoriesTool",
     "SearchIssuesTool",
     "RequestReviewerTool",
+    "GetTreeTool",
 ]
 
 
@@ -2004,9 +2191,9 @@ __all__ = [
 
 if __name__ == "__main__":
     github_client = GitHubAPIClient()
-    tool = ListRepositoriesTool(github_client=github_client)
-    repos = tool.invoke({
-        "owner": "synchropia",
+    tool = GetRepositoryTool(github_client=github_client)
+    res = tool.invoke({
+        "owner":"synchropia",
+        "repo":"synchropia-web"
     })
-    print(repos)
-    
+    print(res)

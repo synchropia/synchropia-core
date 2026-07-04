@@ -35,7 +35,7 @@ from langchain_core.output_parsers.openai_tools import parse_tool_calls
 
 class ChatSelfHosted(BaseChatModel):
     """LangChain wrapper for a local OpenAI-compatible server with full tool support."""
-    base_url: str = "http://127.0.0.1:8080"
+    base_url: str = "http://127.0.0.1:8081"
     model_name: str = "Qwen3.5-4B"
     temperature: float = 0.1
     streaming: bool = False
@@ -639,7 +639,7 @@ class UnifiedLLMGateway:
             id="selfhosted",
             name="selfhosted",
             display_name="Self-Hosted",
-            base_url="http://127.0.0.1:8080",
+            base_url="http://127.0.0.1:8081",
             logo_url="https://github.com/vllm-project/vllm/raw/main/docs/source/assets/vllm-logo-text-light.png",
             description="Local self-hosted OpenAI-compatible LLM server",
             requires_api_key=False,
@@ -679,65 +679,6 @@ class UnifiedLLMGateway:
             return await provider.get_models()
         return []
 
-    async def generate_response(self, provider_id: str, model_id: str, prompt: str, **kwargs) -> str:
-        """Fallback non-agent direct generation endpoint using semantic cache."""
-        logger.info(f"Direct gateway request received: provider='{provider_id}', model='{model_id}'")
-        
-        try:
-            cached_res = await semantic_cache.lookup(prompt)
-            if cached_res is not None:
-                logger.success("Gateway request satisfied from semantic cache.")
-                run_id = kwargs.get("run_id")
-                if run_id:
-                    words = cached_res.split(" ")
-                    for i, word in enumerate(words):
-                        token = word + (" " if i < len(words) - 1 else "")
-                        token_event = {
-                            "event": "token",
-                            "source": provider_id,
-                            "token": token,
-                            "run_id": run_id,
-                            "cached": True
-                        }
-                        try:
-                            await kafka_client.publish("synchropia-agent-responses", token_event)
-                        except Exception as ke:
-                            logger.warning(f"Failed to publish cached token to Kafka: {ke}")
-                        await asyncio.sleep(0.015)
-                        
-                    response_event = {
-                        "event": "agent_response",
-                        "source": provider_id,
-                        "text": cached_res,
-                        "run_id": run_id,
-                        "cached": True
-                    }
-                    try:
-                        await kafka_client.publish("synchropia-agent-responses", response_event)
-                    except Exception as ke:
-                        logger.warning(f"Failed to publish cached response to Kafka: {ke}")
-                return cached_res
-        except Exception as e:
-            logger.warning(f"Failed to lookup in semantic cache: {e}")
-
-        provider = self.get_provider(provider_id)
-        if not provider:
-            raise ValueError(f"Provider '{provider_id}' is not supported.")
-
-        try:
-            response_text = await provider.generate(model_id, prompt, **kwargs)
-        except Exception as e:
-            logger.error(f"Failed to generate response: {e}")
-            raise
-
-        try:
-            await semantic_cache.set(prompt, response_text)
-        except Exception as e:
-            logger.warning(f"Failed to save to semantic cache: {e}")
-
-        return response_text
 
 unified_llm_gateway = UnifiedLLMGateway()
 
-if __name__ == "__main__":
-    print(asyncio.run(unified_llm_gateway.get_models_for_provider("groq")))

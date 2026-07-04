@@ -66,12 +66,21 @@ class MemoryLayer:
         }
         
         logger.info(f"Mem0 Add: Sending additive memory request for user_id: '{user_id}'...")
-        response = await self.client.post(url, json=payload)
-        response.raise_for_status()
-        
-        data = response.json()
-        logger.success(f"Mem0 Add: Successfully added/updated memories for user_id: '{user_id}'.")
-        return data
+        try:
+            response = await self.client.post(url, json=payload)
+            response.raise_for_status()
+            data = response.json()
+            logger.success(f"Mem0 Add: Successfully added/updated memories for user_id: '{user_id}'.")
+            return data
+        except httpx.HTTPStatusError as e:
+            logger.error(f"Mem0 Add failed for user_id '{user_id}': HTTP status error {e.response.status_code} - {e.response.text}")
+            raise
+        except httpx.RequestError as e:
+            logger.error(f"Mem0 Add failed for user_id '{user_id}': Network request error: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Mem0 Add failed for user_id '{user_id}': Unhandled error: {e}")
+            raise
 
     async def get_memories(
         self,
@@ -99,12 +108,21 @@ class MemoryLayer:
         }
         
         logger.info(f"Mem0 Get: Retrieving memories for user_id: '{user_id}' (Page: {page}, Page size: {page_size})...")
-        response = await self.client.post(url, json=payload, params=params)
-        response.raise_for_status()
-        
-        data = response.json()
-        logger.success(f"Mem0 Get: Successfully retrieved {len(data.get('results', []))} memories.")
-        return data
+        try:
+            response = await self.client.post(url, json=payload, params=params)
+            response.raise_for_status()
+            data = response.json()
+            logger.success(f"Mem0 Get: Successfully retrieved {len(data.get('results', []))} memories.")
+            return data
+        except httpx.HTTPStatusError as e:
+            logger.error(f"Mem0 Get failed for user_id '{user_id}': HTTP status error {e.response.status_code} - {e.response.text}")
+            raise
+        except httpx.RequestError as e:
+            logger.error(f"Mem0 Get failed for user_id '{user_id}': Network request error: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Mem0 Get failed for user_id '{user_id}': Unhandled error: {e}")
+            raise
 
     async def search_memories(
         self,
@@ -131,12 +149,21 @@ class MemoryLayer:
         }
         
         logger.info(f"Mem0 Search: Running query '{query[:40]}' on user_id: '{user_id}'...")
-        response = await self.client.post(url, json=payload)
-        response.raise_for_status()
-        
-        data = response.json()
-        logger.success(f"Mem0 Search: Found {len(data)} matching memory records.")
-        return data
+        try:
+            response = await self.client.post(url, json=payload)
+            response.raise_for_status()
+            data = response.json()
+            logger.success(f"Mem0 Search: Found {len(data)} matching memory records.")
+            return data
+        except httpx.HTTPStatusError as e:
+            logger.error(f"Mem0 Search failed for user_id '{user_id}' and query '{query[:30]}': HTTP status error {e.response.status_code} - {e.response.text}")
+            raise
+        except httpx.RequestError as e:
+            logger.error(f"Mem0 Search failed for user_id '{user_id}' and query '{query[:30]}': Network request error: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Mem0 Search failed for user_id '{user_id}' and query '{query[:30]}': Unhandled error: {e}")
+            raise
 
     async def update_memory(
         self,
@@ -152,12 +179,21 @@ class MemoryLayer:
         }
         
         logger.info(f"Mem0 Update: Modifying memory record '{memory_id}'...")
-        response = await self.client.put(url, json=payload)
-        response.raise_for_status()
-        
-        data = response.json()
-        logger.success(f"Mem0 Update: Memory record '{memory_id}' successfully updated.")
-        return data
+        try:
+            response = await self.client.put(url, json=payload)
+            response.raise_for_status()
+            data = response.json()
+            logger.success(f"Mem0 Update: Memory record '{memory_id}' successfully updated.")
+            return data
+        except httpx.HTTPStatusError as e:
+            logger.error(f"Mem0 Update failed for memory_id '{memory_id}': HTTP status error {e.response.status_code} - {e.response.text}")
+            raise
+        except httpx.RequestError as e:
+            logger.error(f"Mem0 Update failed for memory_id '{memory_id}': Network request error: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Mem0 Update failed for memory_id '{memory_id}': Unhandled error: {e}")
+            raise
 
     async def delete_memory(
         self,
@@ -167,43 +203,36 @@ class MemoryLayer:
         url = f"{self.base_url}/v1/memories/{memory_id}/"
         
         logger.info(f"Mem0 Delete: Removing memory record '{memory_id}'...")
-        response = await self.client.delete(url)
-        response.raise_for_status()
-        
-        data = response.json()
-        logger.success(f"Mem0 Delete: Memory record '{memory_id}' successfully removed.")
-        return data
+        try:
+            response = await self.client.delete(url)
+            response.raise_for_status()
+            data = response.json()
+            logger.success(f"Mem0 Delete: Memory record '{memory_id}' successfully removed.")
+            return data
+        except httpx.HTTPStatusError as e:
+            logger.error(f"Mem0 Delete failed for memory_id '{memory_id}': HTTP status error {e.response.status_code} - {e.response.text}")
+            raise
+        except httpx.RequestError as e:
+            logger.error(f"Mem0 Delete failed for memory_id '{memory_id}': Network request error: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Mem0 Delete failed for memory_id '{memory_id}': Unhandled error: {e}")
+            raise
 
 
 __all__ = ["MemoryLayer"]
 
+memory_layer = MemoryLayer()
 
 # Verification self-test block
 if __name__ == "__main__":
     import asyncio
 
-    async def test_run():
-        logger.info("Initializing direct MemoryLayer verification run...")
-        # Instantiating client (reads MEM0_API_KEY from environment)
+    async def delete_memories():
         client = MemoryLayer()
-        
-        try:
-            # We only run the test if the API key is present
-            if not client.api_key or client.api_key == "your-api-key-here":
-                logger.warning("Skipping live verification tests. MEM0_API_KEY is not set or is set to default.")
-                return
-                
-            # Perform a test search query (non-destructive)
-            res = await client.search_memories(
-                query="Does the user have a database preference?",
-                user_id="test_user_synchropia",
-                top_k=2
-            )
-            print("Search Results:", res)
-            
-        except Exception as e:
-            logger.error(f"MemoryLayer verification encountered an error: {e}")
-        finally:
-            await client.aclose()
+        memory_id = await client.get_memories(user_id="cli_user")
+        memory_ids = [m['id'] for m in memory_id['results']]
+        for memory_id in memory_ids:
+            await client.delete_memory(memory_id=memory_id)
 
-    asyncio.run(test_run())
+    asyncio.run(delete_memories())

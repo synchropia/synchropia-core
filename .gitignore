@@ -6,6 +6,10 @@ dist/
 wheels/
 *.egg-info
 
+cli_stream_architect.py
+digest.txt 
+mlflow.db 
+response 
 # Virtual environments
 .venv
 .env*

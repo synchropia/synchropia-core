@@ -1,2 +1,62 @@
-data: {"event": "connected", "run_id": "a79198c1-8cc3-4197-aee5-aa962732f195"}
+data: {"event": "connected", "run_id": "2870efe3-f64d-4c7e-b191-4c5a10753610"}
+
+data: {"event_id": "e4b2ac93-5dd2-4aa9-b7ff-4991ebf00b9b", "run_id": "2870efe3-f64d-4c7e-b191-4c5a10753610", "session_id": "e4a38a44-a59b-4af4-98b4-8eaa8dd9e0b7", "event_type": "agent_start", "source_agent": "swarm", "target_agent": null, "payload": {}, "error_details": null, "timestamp": "2026-07-04T05:37:18.283295+00:00", "event": "agent_start"}
+
+data: {"event_id": "011d1a97-720f-41d7-9298-c44c89bd40dd", "run_id": "2870efe3-f64d-4c7e-b191-4c5a10753610", "session_id": "e4a38a44-a59b-4af4-98b4-8eaa8dd9e0b7", "event_type": "token", "source_agent": "swarm", "target_agent": null, "payload": {"token": "Which"}, "error_details": null, "timestamp": "2026-07-04T05:37:45.224431+00:00", "event": "token", "token": "Which"}
+
+data: {"event_id": "9e1f20dc-f39b-444d-9c38-4ae9bec061c5", "run_id": "2870efe3-f64d-4c7e-b191-4c5a10753610", "session_id": "e4a38a44-a59b-4af4-98b4-8eaa8dd9e0b7", "event_type": "token", "source_agent": "swarm", "target_agent": null, "payload": {"token": " Jira"}, "error_details": null, "timestamp": "2026-07-04T05:37:45.246808+00:00", "event": "token", "token": " Jira"}
+
+data: {"event_id": "436a8019-1684-450b-b3bb-b57b30871c0a", "run_id": "2870efe3-f64d-4c7e-b191-4c5a10753610", "session_id": "e4a38a44-a59b-4af4-98b4-8eaa8dd9e0b7", "event_type": "token", "source_agent": "swarm", "target_agent": null, "payload": {"token": " project"}, "error_details": null, "timestamp": "2026-07-04T05:37:45.273188+00:00", "event": "token", "token": " project"}
+
+data: {"event_id": "e7436633-f762-4056-af74-f64ef12fd05c", "run_id": "2870efe3-f64d-4c7e-b191-4c5a10753610", "session_id": "e4a38a44-a59b-4af4-98b4-8eaa8dd9e0b7", "event_type": "token", "source_agent": "swarm", "target_agent": null, "payload": {"token": " are"}, "error_details": null, "timestamp": "2026-07-04T05:37:45.303728+00:00", "event": "token", "token": " are"}
+
+data: {"event_id": "844931db-d6e7-46fd-9d90-6486a08278ae", "run_id": "2870efe3-f64d-4c7e-b191-4c5a10753610", "session_id": "e4a38a44-a59b-4af4-98b4-8eaa8dd9e0b7", "event_type": "token", "source_agent": "swarm", "target_agent": null, "payload": {"token": " you"}, "error_details": null, "timestamp": "2026-07-04T05:37:45.328431+00:00", "event": "token", "token": " you"}
+
+data: {"event_id": "2b6cbfb9-ff5a-433c-8999-f83c366dd977", "run_id": "2870efe3-f64d-4c7e-b191-4c5a10753610", "session_id": "e4a38a44-a59b-4af4-98b4-8eaa8dd9e0b7", "event_type": "token", "source_agent": "swarm", "target_agent": null, "payload": {"token": " referring"}, "error_details": null, "timestamp": "2026-07-04T05:37:45.349403+00:00", "event": "token", "token": " referring"}
+
+data: {"event_id": "0edf56c4-b58f-40c9-9fc4-cd28eb1c3ef4", "run_id": "2870efe3-f64d-4c7e-b191-4c5a10753610", "session_id": "e4a38a44-a59b-4af4-98b4-8eaa8dd9e0b7", "event_type": "token", "source_agent": "swarm", "target_agent": null, "payload": {"token": " to"}, "error_details": null, "timestamp": "2026-07-04T05:37:45.377170+00:00", "event": "token", "token": " to"}
+
+data: {"event_id": "555e7dc3-8e64-4ecf-9aaf-6fc691945f29", "run_id": "2870efe3-f64d-4c7e-b191-4c5a10753610", "session_id": "e4a38a44-a59b-4af4-98b4-8eaa8dd9e0b7", "event_type": "token", "source_agent": "swarm", "target_agent": null, "payload": {"token": "?"}, "error_details": null, "timestamp": "2026-07-04T05:37:45.405041+00:00", "event": "token", "token": "?"}
+
+data: {"event_id": "1b4229db-97de-4a0b-b241-5526ee3a12b3", "run_id": "2870efe3-f64d-4c7e-b191-4c5a10753610", "session_id": "e4a38a44-a59b-4af4-98b4-8eaa8dd9e0b7", "event_type": "token", "source_agent": "swarm", "target_agent": null, "payload": {"token": " Please"}, "error_details": null, "timestamp": "2026-07-04T05:37:45.428630+00:00", "event": "token", "token": " Please"}
+
+data: {"event_id": "ec1a3b84-f0e9-4060-b55d-f57e6f8e2101", "run_id": "2870efe3-f64d-4c7e-b191-4c5a10753610", "session_id": "e4a38a44-a59b-4af4-98b4-8eaa8dd9e0b7", "event_type": "token", "source_agent": "swarm", "target_agent": null, "payload": {"token": " provide"}, "error_details": null, "timestamp": "2026-07-04T05:37:45.456598+00:00", "event": "token", "token": " provide"}
+
+data: {"event_id": "95bf8dda-2d30-4ecb-aed0-daee9c8f69b6", "run_id": "2870efe3-f64d-4c7e-b191-4c5a10753610", "session_id": "e4a38a44-a59b-4af4-98b4-8eaa8dd9e0b7", "event_type": "token", "source_agent": "swarm", "target_agent": null, "payload": {"token": " the"}, "error_details": null, "timestamp": "2026-07-04T05:37:45.484225+00:00", "event": "token", "token": " the"}
+
+data: {"event_id": "dfc66e04-babd-4102-a3da-a996c0fa6d06", "run_id": "2870efe3-f64d-4c7e-b191-4c5a10753610", "session_id": "e4a38a44-a59b-4af4-98b4-8eaa8dd9e0b7", "event_type": "token", "source_agent": "swarm", "target_agent": null, "payload": {"token": " project"}, "error_details": null, "timestamp": "2026-07-04T05:37:45.502234+00:00", "event": "token", "token": " project"}
+
+data: {"event_id": "b95dbd70-5916-4a37-bfd8-7adf4c4fb159", "run_id": "2870efe3-f64d-4c7e-b191-4c5a10753610", "session_id": "e4a38a44-a59b-4af4-98b4-8eaa8dd9e0b7", "event_type": "token", "source_agent": "swarm", "target_agent": null, "payload": {"token": " key"}, "error_details": null, "timestamp": "2026-07-04T05:37:45.533042+00:00", "event": "token", "token": " key"}
+
+data: {"event_id": "75f6aa85-8a81-4d64-b2ff-cbd6abd3d522", "run_id": "2870efe3-f64d-4c7e-b191-4c5a10753610", "session_id": "e4a38a44-a59b-4af4-98b4-8eaa8dd9e0b7", "event_type": "token", "source_agent": "swarm", "target_agent": null, "payload": {"token": " or"}, "error_details": null, "timestamp": "2026-07-04T05:37:45.557854+00:00", "event": "token", "token": " or"}
+
+data: {"event_id": "0c0cd3ab-d0f8-406c-9c09-501d64629903", "run_id": "2870efe3-f64d-4c7e-b191-4c5a10753610", "session_id": "e4a38a44-a59b-4af4-98b4-8eaa8dd9e0b7", "event_type": "token", "source_agent": "swarm", "target_agent": null, "payload": {"token": " a"}, "error_details": null, "timestamp": "2026-07-04T05:37:45.585260+00:00", "event": "token", "token": " a"}
+
+data: {"event_id": "cbb9d77a-79fd-4708-a2af-c3d9f9440c38", "run_id": "2870efe3-f64d-4c7e-b191-4c5a10753610", "session_id": "e4a38a44-a59b-4af4-98b4-8eaa8dd9e0b7", "event_type": "token", "source_agent": "swarm", "target_agent": null, "payload": {"token": " J"}, "error_details": null, "timestamp": "2026-07-04T05:37:45.609979+00:00", "event": "token", "token": " J"}
+
+data: {"event_id": "ebc1d2bc-e217-481a-8a62-f46e7a42d63f", "run_id": "2870efe3-f64d-4c7e-b191-4c5a10753610", "session_id": "e4a38a44-a59b-4af4-98b4-8eaa8dd9e0b7", "event_type": "token", "source_agent": "swarm", "target_agent": null, "payload": {"token": "QL"}, "error_details": null, "timestamp": "2026-07-04T05:37:45.634290+00:00", "event": "token", "token": "QL"}
+
+data: {"event_id": "db9d189d-1096-4265-b600-2915759b7ef1", "run_id": "2870efe3-f64d-4c7e-b191-4c5a10753610", "session_id": "e4a38a44-a59b-4af4-98b4-8eaa8dd9e0b7", "event_type": "token", "source_agent": "swarm", "target_agent": null, "payload": {"token": " query"}, "error_details": null, "timestamp": "2026-07-04T05:37:45.661652+00:00", "event": "token", "token": " query"}
+
+data: {"event_id": "10b932c5-65d9-4930-8f61-3104a0db0f45", "run_id": "2870efe3-f64d-4c7e-b191-4c5a10753610", "session_id": "e4a38a44-a59b-4af4-98b4-8eaa8dd9e0b7", "event_type": "token", "source_agent": "swarm", "target_agent": null, "payload": {"token": " so"}, "error_details": null, "timestamp": "2026-07-04T05:37:45.678766+00:00", "event": "token", "token": " so"}
+
+data: {"event_id": "8213e2ea-6412-43cb-8611-231b5787166c", "run_id": "2870efe3-f64d-4c7e-b191-4c5a10753610", "session_id": "e4a38a44-a59b-4af4-98b4-8eaa8dd9e0b7", "event_type": "token", "source_agent": "swarm", "target_agent": null, "payload": {"token": " I"}, "error_details": null, "timestamp": "2026-07-04T05:37:45.710534+00:00", "event": "token", "token": " I"}
+
+data: {"event_id": "9bee52d0-af92-467d-9754-dc5d72d3ee7b", "run_id": "2870efe3-f64d-4c7e-b191-4c5a10753610", "session_id": "e4a38a44-a59b-4af4-98b4-8eaa8dd9e0b7", "event_type": "token", "source_agent": "swarm", "target_agent": null, "payload": {"token": " can"}, "error_details": null, "timestamp": "2026-07-04T05:37:45.734083+00:00", "event": "token", "token": " can"}
+
+data: {"event_id": "399b6d90-3ec6-4008-bdaf-a3e851fe612e", "run_id": "2870efe3-f64d-4c7e-b191-4c5a10753610", "session_id": "e4a38a44-a59b-4af4-98b4-8eaa8dd9e0b7", "event_type": "token", "source_agent": "swarm", "target_agent": null, "payload": {"token": " search"}, "error_details": null, "timestamp": "2026-07-04T05:37:45.762646+00:00", "event": "token", "token": " search"}
+
+data: {"event_id": "561b2aa9-0cdd-4ab5-aa05-358b1d64b78e", "run_id": "2870efe3-f64d-4c7e-b191-4c5a10753610", "session_id": "e4a38a44-a59b-4af4-98b4-8eaa8dd9e0b7", "event_type": "token", "source_agent": "swarm", "target_agent": null, "payload": {"token": " for"}, "error_details": null, "timestamp": "2026-07-04T05:37:45.787457+00:00", "event": "token", "token": " for"}
+
+data: {"event_id": "4f3509db-f461-4be2-b5f9-720dd5744cb2", "run_id": "2870efe3-f64d-4c7e-b191-4c5a10753610", "session_id": "e4a38a44-a59b-4af4-98b4-8eaa8dd9e0b7", "event_type": "token", "source_agent": "swarm", "target_agent": null, "payload": {"token": " the"}, "error_details": null, "timestamp": "2026-07-04T05:37:45.814769+00:00", "event": "token", "token": " the"}
+
+data: {"event_id": "33d2d477-7380-4fae-b1dd-4378595fbc38", "run_id": "2870efe3-f64d-4c7e-b191-4c5a10753610", "session_id": "e4a38a44-a59b-4af4-98b4-8eaa8dd9e0b7", "event_type": "token", "source_agent": "swarm", "target_agent": null, "payload": {"token": " issues"}, "error_details": null, "timestamp": "2026-07-04T05:37:45.835573+00:00", "event": "token", "token": " issues"}
+
+data: {"event_id": "95223f50-813d-4e40-aa0a-af05add24420", "run_id": "2870efe3-f64d-4c7e-b191-4c5a10753610", "session_id": "e4a38a44-a59b-4af4-98b4-8eaa8dd9e0b7", "event_type": "token", "source_agent": "swarm", "target_agent": null, "payload": {"token": "."}, "error_details": null, "timestamp": "2026-07-04T05:37:45.867250+00:00", "event": "token", "token": "."}
+
+data: {"event_id": "b5a13fe0-9c3d-497b-b11f-8ec201336633", "run_id": "2870efe3-f64d-4c7e-b191-4c5a10753610", "session_id": "e4a38a44-a59b-4af4-98b4-8eaa8dd9e0b7", "event_type": "token", "source_agent": "swarm", "target_agent": null, "payload": {"token": ""}, "error_details": null, "timestamp": "2026-07-04T05:37:45.946740+00:00", "event": "token", "token": ""}
+
+data: {"event_id": "c90b0e9d-d09f-4e61-b034-05e6729018ed", "run_id": "2870efe3-f64d-4c7e-b191-4c5a10753610", "session_id": "e4a38a44-a59b-4af4-98b4-8eaa8dd9e0b7", "event_type": "agent_response", "source_agent": "swarm", "target_agent": null, "payload": {"text": "Which Jira project are you referring to? Please provide the project key or a JQL query so I can search for the issues."}, "error_details": null, "timestamp": "2026-07-04T05:37:45.954448+00:00", "event": "agent_response", "text": "Which Jira project are you referring to? Please provide the project key or a JQL query so I can search for the issues."}
+
+data: {"event_id": "6ddbc30c-7a21-4ad8-8e49-85b95f922959", "run_id": "2870efe3-f64d-4c7e-b191-4c5a10753610", "session_id": "e4a38a44-a59b-4af4-98b4-8eaa8dd9e0b7", "event_type": "agent_end", "source_agent": "swarm", "target_agent": null, "payload": {}, "error_details": null, "timestamp": "2026-07-04T05:37:45.990489+00:00", "event": "agent_end"}
 

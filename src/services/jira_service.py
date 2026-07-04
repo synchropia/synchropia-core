@@ -514,3 +514,10 @@ __all__ = [
     "JiraTransitionIssueTool",
 ]
 
+if __name__ == "__main__":
+    jira_client = JiraAPIClient()
+    jira_myself_tool = JiraGetMyselfTool(jira_client=jira_client)
+    print(jira_myself_tool.invoke(""))
+
+    jira_search_issues_tool = JiraSearchIssuesTool(jira_client=jira_client)
+    print(jira_search_issues_tool.run("JQL: project = 'ERP' AND status = 'Open'"))

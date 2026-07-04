@@ -1,5 +1,6 @@
 import os
 import json
+import uuid
 from aiokafka import AIOKafkaProducer, AIOKafkaConsumer
 import asyncio
 from typing import Any, Dict, List, Optional, Union
@@ -10,6 +11,9 @@ from dotenv import load_dotenv
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.outputs import LLMResult
 from src.config.settings import settings
+from src.models.event_schemas import SwarmEvent, EventType
+from src.services.database import get_db_session
+from src.models.db_models import AgentExecution, ToolCall
 
 load_dotenv()
 
@@ -22,13 +26,23 @@ class KafkaAPIClient:
         self.bootstrap_servers = bootstrap_servers or settings.KAFKA_BOOTSTRAP_SERVERS
         self._producers: Dict[asyncio.AbstractEventLoop, AIOKafkaProducer] = {}
 
+    @staticmethod
+    def _json_serializer(v: Any) -> bytes:
+        def default_encoder(obj):
+            if hasattr(obj, "isoformat"):
+                return obj.isoformat()
+            if isinstance(obj, uuid.UUID):
+                return str(obj)
+            raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+        return json.dumps(v, default=default_encoder).encode("utf-8")
+
     async def get_producer(self, loop: asyncio.AbstractEventLoop) -> AIOKafkaProducer:
         """Get or initialize the producer bound to the specified event loop."""
         if loop not in self._producers or self._producers[loop] is None:
             logger.info(f"Initializing AIOKafkaProducer for event loop {id(loop)}")
             producer = AIOKafkaProducer(
                 bootstrap_servers=self.bootstrap_servers,
-                value_serializer=lambda v: json.dumps(v).encode("utf-8")
+                value_serializer=self._json_serializer
             )
             # Short timeout to avoid hanging if broker is completely offline
             await asyncio.wait_for(producer.start(), timeout=5.0)
@@ -97,11 +111,12 @@ class KafkaAgentCallbackHandler(BaseCallbackHandler):
     - Textual responses (token streams and final output text)
     """
 
-    def __init__(self, kafka_client: KafkaAPIClient, default_agent_name: str = "Agent"):
+    def __init__(self, kafka_client: KafkaAPIClient, default_agent_name: str = "Agent", session_id: str | None = None):
         super().__init__()
         self.kafka_client = kafka_client
         self.default_agent_name = default_agent_name
         self.run_id: str | None = None
+        self.session_id: str | None = session_id
         try:
             self.loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -117,6 +132,38 @@ class KafkaAgentCallbackHandler(BaseCallbackHandler):
         if self.run_id:
             return str(self.run_id)
         return str(run_id) if run_id else ""
+
+    def _create_event(
+        self, 
+        event_type: EventType, 
+        source_agent: str, 
+        run_id: Any, 
+        payload: dict = None, 
+        error_details: str = None
+    ) -> dict:
+        """Helper to construct, validate and serialize a SwarmEvent."""
+        resolved_run_id = self._get_run_id(run_id)
+        event_obj = SwarmEvent(
+            event_id=str(uuid.uuid4()),
+            run_id=resolved_run_id,
+            session_id=self.session_id or "default_session",
+            event_type=event_type,
+            source_agent=source_agent,
+            payload=payload or {},
+            error_details=error_details
+        )
+        
+        # Conforming to SwarmEvent dict but maintaining top-level compatibility
+        # for older event consumers by flattening payload & adding alias fields.
+        data = event_obj.model_dump()
+        data["event"] = event_type.value
+        if payload:
+            for k, v in payload.items():
+                data[k] = v
+        if error_details:
+            data["error"] = error_details
+            data["message"] = error_details
+        return data
 
     def _safe_publish(self, topic: str, event: dict) -> None:
         """Publish an event to Kafka in a thread-safe, loop-safe manner."""
@@ -162,12 +209,13 @@ class KafkaAgentCallbackHandler(BaseCallbackHandler):
     ) -> Any:
         """Publish individual generated tokens for real-time streaming."""
         agent_name = self._get_agent_name(kwargs.get("metadata"))
-        event = {
-            "event": "token",
-            "source": agent_name,
-            "token": token if isinstance(token, str) else json.dumps(token),
-            "run_id": self._get_run_id(run_id)
-        }
+        token_str = token if isinstance(token, str) else json.dumps(token)
+        event = self._create_event(
+            event_type=EventType.TOKEN,
+            source_agent=agent_name,
+            run_id=run_id,
+            payload={"token": token_str}
+        )
         self._safe_publish("synchropia-agent-responses", event)
 
     def on_llm_end(
@@ -183,12 +231,12 @@ class KafkaAgentCallbackHandler(BaseCallbackHandler):
         agent_name = self._get_agent_name(kwargs.get("metadata"))
         for generation_list in response.generations:
             for generation in generation_list:
-                event = {
-                    "event": "agent_response",
-                    "source": agent_name,
-                    "text": generation.text,
-                    "run_id": self._get_run_id(run_id)
-                }
+                event = self._create_event(
+                    event_type=EventType.AGENT_RESPONSE,
+                    source_agent=agent_name,
+                    run_id=run_id,
+                    payload={"text": generation.text}
+                )
                 self._safe_publish("synchropia-agent-responses", event)
 
     def on_llm_error(
@@ -202,12 +250,12 @@ class KafkaAgentCallbackHandler(BaseCallbackHandler):
     ) -> Any:
         """Publish LLM error events."""
         agent_name = self._get_agent_name(kwargs.get("metadata"))
-        event = {
-            "event": "error",
-            "source": agent_name,
-            "message": str(error),
-            "run_id": self._get_run_id(run_id)
-        }
+        event = self._create_event(
+            event_type=EventType.AGENT_ERROR,
+            source_agent=agent_name,
+            run_id=run_id,
+            error_details=str(error)
+        )
         self._safe_publish("synchropia-agent-responses", event)
 
     def on_tool_start(
@@ -225,14 +273,40 @@ class KafkaAgentCallbackHandler(BaseCallbackHandler):
         meta = metadata or kwargs.get("metadata")
         agent_name = self._get_agent_name(meta)
         tool_name = serialized.get("name", "unknown_tool")
-        event = {
-            "event": "tool_call",
-            "source": agent_name,
-            "tool": tool_name,
-            "input": input_str,
-            "run_id": self._get_run_id(run_id)
-        }
+        event = self._create_event(
+            event_type=EventType.TOOL_CALL,
+            source_agent=agent_name,
+            run_id=run_id,
+            payload={"tool": tool_name, "input": input_str}
+        )
         self._safe_publish("synchropia-tool-calls", event)
+
+        # Log ToolCall start state to Database
+        try:
+            try:
+                args = json.loads(input_str)
+            except Exception:
+                args = {"input": input_str}
+
+            with get_db_session() as db:
+                resolved_run_id = self._get_run_id(run_id)
+                db_exec = db.query(AgentExecution).filter_by(
+                    run_id=resolved_run_id,
+                    agent_name=agent_name
+                ).order_by(AgentExecution.created_at.desc()).first()
+
+                if db_exec:
+                    db_tool = ToolCall(
+                        id=str(run_id),  # Match the callback's specific run_id
+                        agent_execution_id=db_exec.id,
+                        tool_name=tool_name,
+                        arguments=args,
+                        status="RUNNING"
+                    )
+                    db.add(db_tool)
+                    db.commit()
+        except Exception as e:
+            logger.warning(f"Database logging failed for tool start: {e}")
 
     def on_tool_end(
         self,
@@ -244,13 +318,24 @@ class KafkaAgentCallbackHandler(BaseCallbackHandler):
     ) -> Any:
         """Publish tool execution outputs."""
         agent_name = self._get_agent_name(kwargs.get("metadata"))
-        event = {
-            "event": "tool_response",
-            "source": agent_name,
-            "output": str(output),
-            "run_id": self._get_run_id(run_id)
-        }
+        event = self._create_event(
+            event_type=EventType.TOOL_RESPONSE,
+            source_agent=agent_name,
+            run_id=run_id,
+            payload={"output": str(output)}
+        )
         self._safe_publish("synchropia-tool-responses", event)
+
+        # Update ToolCall completion state in Database
+        try:
+            with get_db_session() as db:
+                db_tool = db.query(ToolCall).filter_by(id=str(run_id)).first()
+                if db_tool:
+                    db_tool.response_payload = str(output)
+                    db_tool.status = "SUCCESS"
+                    db.commit()
+        except Exception as e:
+            logger.warning(f"Database logging failed for tool end: {e}")
 
     def on_tool_error(
         self,
@@ -262,13 +347,86 @@ class KafkaAgentCallbackHandler(BaseCallbackHandler):
     ) -> Any:
         """Publish tool execution errors."""
         agent_name = self._get_agent_name(kwargs.get("metadata"))
-        event = {
-            "event": "tool_error",
-            "source": agent_name,
-            "error": str(error),
-            "run_id": self._get_run_id(run_id)
-        }
+        event = self._create_event(
+            event_type=EventType.TOOL_ERROR,
+            source_agent=agent_name,
+            run_id=run_id,
+            error_details=str(error)
+        )
         self._safe_publish("synchropia-tool-responses", event)
+
+        # Update ToolCall error state in Database
+        try:
+            with get_db_session() as db:
+                db_tool = db.query(ToolCall).filter_by(id=str(run_id)).first()
+                if db_tool:
+                    db_tool.response_payload = str(error)
+                    db_tool.status = "ERROR"
+                    db.commit()
+        except Exception as e:
+            logger.warning(f"Database logging failed for tool error: {e}")
+
+    def on_chain_start(
+        self,
+        serialized: Dict[str, Any],
+        inputs: Dict[str, Any],
+        *,
+        run_id: Any,
+        parent_run_id: Optional[Any] = None,
+        tags: Optional[list[str]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> Any:
+        """Publish lifecycle start event for root runnable/agent chain."""
+        # Only publish for the root agent run
+        if parent_run_id is None or str(run_id) == str(self.run_id):
+            meta = metadata or kwargs.get("metadata")
+            agent_name = self._get_agent_name(meta)
+            event = self._create_event(
+                event_type=EventType.AGENT_START,
+                source_agent=agent_name,
+                run_id=run_id
+            )
+            self._safe_publish("synchropia-agent-responses", event)
+
+    def on_chain_end(
+        self,
+        outputs: Dict[str, Any],
+        *,
+        run_id: Any,
+        parent_run_id: Optional[Any] = None,
+        **kwargs: Any,
+    ) -> Any:
+        """Publish lifecycle end event for root runnable/agent chain."""
+        # Only publish for the root agent run
+        if parent_run_id is None or str(run_id) == str(self.run_id):
+            agent_name = self._get_agent_name(kwargs.get("metadata"))
+            event = self._create_event(
+                event_type=EventType.AGENT_END,
+                source_agent=agent_name,
+                run_id=run_id
+            )
+            self._safe_publish("synchropia-agent-responses", event)
+
+    def on_chain_error(
+        self,
+        error: BaseException,
+        *,
+        run_id: Any,
+        parent_run_id: Optional[Any] = None,
+        **kwargs: Any,
+    ) -> Any:
+        """Publish lifecycle error event for root runnable/agent chain."""
+        # Only publish for the root agent run
+        if parent_run_id is None or str(run_id) == str(self.run_id):
+            agent_name = self._get_agent_name(kwargs.get("metadata"))
+            event = self._create_event(
+                event_type=EventType.AGENT_ERROR,
+                source_agent=agent_name,
+                run_id=run_id,
+                error_details=str(error)
+            )
+            self._safe_publish("synchropia-agent-responses", event)
 
 kafka_client = KafkaAPIClient()
 

@@ -1,11 +1,7 @@
 """
-architect/harness.py
+agents/utils/harness_base.py
 --------------------
-Responsible for:
-  1. Resolving the execution backend (OpenShell → LocalPowerShell fallback).
-  2. Building the unified tool-list from all available service clients.
-
-Agent creation and invocation are intentionally NOT done here; see index.py.
+Shared base class and sandbox execution backends for Synchropia agent harnesses.
 """
 
 import asyncio
@@ -15,6 +11,7 @@ import sys
 from functools import cached_property
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
+from typing import Any, List
 from typing_extensions import override, AsyncContextManager, Self
 
 from deepagents.backends.sandbox import BaseSandbox
@@ -153,6 +150,8 @@ class LocalPowerShellBackend(BaseSandbox, AsyncContextManager):
     @override
     def execute(self, command: str, *, timeout: int | None = None) -> ExecuteResponse:
         """Execute a PowerShell command locally."""
+        # Use python instead of python3 for local Windows compatibility
+        command = command.replace("python3 ", "python ")
         try:
             cmd_list = [
                 self._powershell_cmd,
@@ -236,17 +235,16 @@ class LocalPowerShellBackend(BaseSandbox, AsyncContextManager):
 
 
 # ---------------------------------------------------------------------------
-# Harness: sandbox + tools initialisation only
+# Base Harness Class
 # ---------------------------------------------------------------------------
 
-class ArchitectAgentHarness:
+class BaseAgentHarness:
     """
-    Initialises the execution sandbox and builds the tool-list for the
-    Architect agent.  Does NOT create or invoke the agent itself — that
-    responsibility belongs to index.py.
+    Base class for Synchropia agent harnesses.
+    Handles sandbox resolution and provides tool registration helper utilities.
     """
 
-    def __init__(self, sandbox_name: str = "architect-sandbox"):
+    def __init__(self, sandbox_name: str):
         # 1. Resolve backend: OpenShell → LocalPowerShell fallback
         self.backend: BaseSandbox | None = None
         if HAS_OPENSHELL:
@@ -254,57 +252,16 @@ class ArchitectAgentHarness:
                 self.backend = OpenShellBackend(sandbox_name=sandbox_name)
             except Exception as e:
                 print(
-                    f"[ArchitectAgentHarness] Warning: OpenShellBackend failed ({e}). "
+                    f"[{self.__class__.__name__}] Warning: OpenShellBackend failed ({e}). "
                     "Falling back to LocalPowerShellBackend."
                 )
 
         if self.backend is None:
             self.backend = LocalPowerShellBackend(sandbox_name=sandbox_name)
 
-        # 2. Instantiate service clients (best-effort — missing config is non-fatal)
-        gh_client = self._try_init(GitHubAPIClient)
-        gl_client = self._try_init(GitLabAPIClient)
-        jr_client = self._try_init(JiraAPIClient)
-        sl_client = slack_client  # pre-instantiated singleton from slack_service
-
-        # 3. Build unified tool list
-        self.tools: list = []
-
-        if gh_client:
-            github_tool_classes = [
-                ListRepositoriesTool, GetRepositoryTool, ListIssuesTool, CreateIssueTool,
-                UpdateIssueTool, ListPullRequestsTool, CreatePullRequestTool, MergePullRequestTool,
-                CheckPRStatusTool, ListWorkflowRunsTool, TriggerWorkflowTool, CancelWorkflowRunTool,
-                ListCommitsTool, ListBranchesTool, CreateBranchTool, ListDeploymentsTool,
-                CreateDeploymentTool, GetFileContentTool, CreateOrUpdateFileTool, ListWebhooksTool,
-                CreateWebhookTool, SearchRepositoriesTool, SearchIssuesTool, RequestReviewerTool,
-            ]
-            self._register_tools(github_tool_classes, github_client=gh_client)
-
-        if gl_client:
-            gitlab_tool_classes = [
-                ListGitLabProjectsTool, GetGitLabFileContentTool, CreateOrUpdateGitLabFileTool,
-                CreateGitLabBranchTool, CreateGitLabMergeRequestTool,
-            ]
-            self._register_tools(gitlab_tool_classes, gitlab_client=gl_client)
-
-        if jr_client:
-            jira_tool_classes = [
-                JiraGetMyselfTool, JiraCreateIssueTool, JiraSearchIssuesTool,
-                JiraGetIssueTool, JiraAddCommentTool, JiraTransitionIssueTool,
-            ]
-            self._register_tools(jira_tool_classes, jira_client=jr_client)
-
-        if sl_client:
-            slack_tool_classes = [
-                SendMessageTool, CreateChannelTool, InviteUsersTool, ArchiveChannelTool,
-                PinMessageTool, FindUserByEmailTool, FetchLatestMessageTool,
-            ]
-            self._register_tools(slack_tool_classes, slack_client=sl_client)
-
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+        # Initialize tool list with unified handoff tools
+        from src.agents.utils.handoffs import HANDOFF_TOOLS
+        self.tools: List[Any] = list(HANDOFF_TOOLS)
 
     @staticmethod
     def _try_init(cls, *args, **kwargs):
@@ -312,7 +269,7 @@ class ArchitectAgentHarness:
         try:
             return cls(*args, **kwargs)
         except Exception as e:
-            print(f"[ArchitectAgentHarness] Could not init {cls.__name__}: {e}")
+            print(f"[HarnessBase] Could not init {cls.__name__}: {e}")
             return None
 
     def _register_tools(self, tool_classes: list, **client_kwargs):
@@ -321,5 +278,4 @@ class ArchitectAgentHarness:
             try:
                 self.tools.append(t_cls(**client_kwargs))
             except Exception as e:
-                print(f"[ArchitectAgentHarness] Skipping {t_cls.__name__}: {e}")
-
+                print(f"[{self.__class__.__name__}] Skipping {t_cls.__name__}: {e}")
