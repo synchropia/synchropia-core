@@ -138,6 +138,7 @@ class KafkaAgentCallbackHandler(BaseCallbackHandler):
         event_type: EventType, 
         source_agent: str, 
         run_id: Any, 
+        tool_name: Optional[str] = None,
         payload: dict = None, 
         error_details: str = None
     ) -> dict:
@@ -147,6 +148,7 @@ class KafkaAgentCallbackHandler(BaseCallbackHandler):
             event_id=str(uuid.uuid4()),
             run_id=resolved_run_id,
             session_id=self.session_id or "default_session",
+            tool_name=tool_name,
             event_type=event_type,
             source_agent=source_agent,
             payload=payload or {},
@@ -276,6 +278,7 @@ class KafkaAgentCallbackHandler(BaseCallbackHandler):
         event = self._create_event(
             event_type=EventType.TOOL_CALL,
             source_agent=agent_name,
+            tool_name=tool_name,
             run_id=run_id,
             payload={"tool": tool_name, "input": input_str}
         )
@@ -312,6 +315,7 @@ class KafkaAgentCallbackHandler(BaseCallbackHandler):
         self,
         output: Any,
         *,
+        tool_name: str,
         run_id: Any,
         parent_run_id: Optional[Any] = None,
         **kwargs: Any,
@@ -321,8 +325,9 @@ class KafkaAgentCallbackHandler(BaseCallbackHandler):
         event = self._create_event(
             event_type=EventType.TOOL_RESPONSE,
             source_agent=agent_name,
+            tool_name=tool_name,
             run_id=run_id,
-            payload={"output": str(output)}
+            payload={"output": str(output), "tool": tool_name}
         )
         self._safe_publish("synchropia-tool-responses", event)
 

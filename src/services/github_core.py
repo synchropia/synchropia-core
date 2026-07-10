@@ -2187,13 +2187,11 @@ __all__ = [
 ]
 
 
-
-
 if __name__ == "__main__":
     github_client = GitHubAPIClient()
     tool = GetRepositoryTool(github_client=github_client)
     res = tool.invoke({
         "owner":"synchropia",
-        "repo":"synchropia-web"
+        "repo":"synchropia-core"
     })
     print(res)

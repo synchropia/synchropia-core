@@ -23,6 +23,7 @@ class SwarmEvent(BaseModel):
     # "Who Did What" Context
     source_agent: str = Field(description="The agent producing the event (e.g., 'pm', 'architect', 'backend_dev')")
     target_agent: Optional[str] = Field(None, description="The intended recipient agent if this is a handoff")
+    tool_name: Optional[str] = Field(None, description="The name of the tool being invoked, populated for TOOL_CALL and TOOL_RESPONSE events")
     
     # Content & Payloads
     payload: Dict[str, Any] = Field(

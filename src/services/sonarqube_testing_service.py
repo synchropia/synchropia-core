@@ -42,11 +42,7 @@ class AbstractTool(BaseTool, ABC):
 
 
 class SonarQubeAPIClient:
-    """A comprehensive client for interacting with the SonarQube / SonarCloud REST API.
-    
-    Uses basic authentication where the username is the User Token and the password 
-    remains empty, managed through persistent connection pools.
-    """
+    """A comprehensive client for interacting with the SonarQube / SonarCloud REST API."""
 
     def __init__(self, url: Optional[str] = None, token: Optional[str] = None):
         self.url = url or settings.SONARQUBE_BASE_URL
@@ -60,13 +56,11 @@ class SonarQubeAPIClient:
         if not self.url or not self.token:
             raise ValueError("SonarQube URL and Token must be configured in environment variables or passed directly.")
 
-        # SonarQube authenticates using the token as the username with an empty password
         self.auth = httpx.BasicAuth(username=self.token, password="")
         
-        # Setup persistent clients
         self.sync_client = httpx.Client(auth=self.auth, timeout=30.0)
         self.async_client = httpx.AsyncClient(auth=self.auth, timeout=30.0)
-        logger.success("SonarQube API client initialized successfully with persistent TCP connection pools.")
+        logger.success("SonarQube API client initialized successfully.")
 
     def __del__(self):
         try:
@@ -83,7 +77,10 @@ class SonarQubeAPIClient:
             response = self.sync_client.request(method, url, params=params, json=data)
             logger.info(f"SonarQube response status code: {response.status_code}")
             response.raise_for_status()
-            return response.json()
+            try:
+                return response.json()
+            except ValueError:
+                return {"status": response.status_code, "message": "Success"}
         except httpx.HTTPStatusError as e:
             logger.error(f"SonarQube request failed: {e.response.text}")
             return {"success": False, "error": f"HTTP status error: {str(e)}", "details": e.response.text}
@@ -100,7 +97,10 @@ class SonarQubeAPIClient:
             response = await self.async_client.request(method, url, params=params, json=data)
             logger.info(f"Async SonarQube response status code: {response.status_code}")
             response.raise_for_status()
-            return response.json()
+            try:
+                return response.json()
+            except ValueError:
+                return {"status": response.status_code, "message": "Success"}
         except httpx.HTTPStatusError as e:
             logger.error(f"Async SonarQube request failed: {e.response.text}")
             return {"success": False, "error": f"HTTP status error: {str(e)}", "details": e.response.text}
@@ -115,18 +115,9 @@ class GetProjectStatusInput(ToolInputSchema):
     project_key: str = Field(description="The unique key of the SonarQube project (e.g., 'org_project-name').")
 
 
-class GetProjectMeasuresInput(ToolInputSchema):
-    project_key: str = Field(description="The unique key of the SonarQube project.")
-    metric_keys: str = Field(
-        default="bugs,vulnerabilities,code_smells,coverage,duplicated_lines_density",
-        description="Comma-separated list of metrics to extract from the component."
-    )
-
-
 # --- Tool Definitions ---
-
 class SonarQubeGetProjectStatusTool(AbstractTool):
-    """Retrieves the Quality Gate status (PASSED or FAILED) of a target project."""
+    """Retrieves the Quality Gate status of a target project."""
     name: str = "sonarqube_get_project_status"
     description: str = "Retrieves the Quality Gate status (green/red) for a target project using its unique project key."
     args_schema: Type[BaseModel] = GetProjectStatusInput
@@ -142,137 +133,24 @@ class SonarQubeGetProjectStatusTool(AbstractTool):
         res = await self.sonarqube_client.make_async_request("GET", "api/qualitygates/project_status", params=params)
         return json.dumps(res)
 
+class ProvisionGitHubProjectInput(ToolInputSchema):
+    organization: str = Field(default="synchropia", description="The target SonarCloud organization key.")
+    installation_keys: str = Field(description="The numerical GitHub repository ID to provision.")
 
-class SonarQubeGetProjectMeasuresTool(AbstractTool):
-    """Extracts specific code quality measures (coverage, bugs, code smells) for a project."""
-    name: str = "sonarqube_get_project_measures"
-    description: str = "Fetches code metrics (bugs, vulnerabilities, code smells, unit test coverage) of a project component."
-    args_schema: Type[BaseModel] = GetProjectMeasuresInput
-    sonarqube_client: SonarQubeAPIClient
-
-    def _run(self, project_key: str, metric_keys: str, run_manager: Optional[CallbackManagerForToolRun] = None) -> str:
-        params = {
-            "component": project_key,
-            "metricKeys": metric_keys
-        }
-        res = self.sonarqube_client.make_request("GET", "api/measures/component", params=params)
-        return json.dumps(res)
-
-    async def _arun(self, project_key: str, metric_keys: str, run_manager: Optional[AsyncCallbackManagerForToolRun] = None) -> str:
-        params = {
-            "component": project_key,
-            "metricKeys": metric_keys
-        }
-        res = await self.sonarqube_client.make_async_request("GET", "api/measures/component", params=params)
-        return json.dumps(res)
-
-
-class GetProjectIssuesInput(ToolInputSchema):
-    project_key: str = Field(description="The unique key of the SonarQube project.")
-    severities: str = Field(
-        default="",
-        description="Optional comma-separated list of severities (e.g. 'INFO,MINOR,MAJOR,CRITICAL,BLOCKER')."
-    )
-    types: str = Field(
-        default="",
-        description="Optional comma-separated list of types (e.g. 'BUG,VULNERABILITY,CODE_SMELL')."
-    )
-    resolved: bool = Field(
-        default=False,
-        description="If false, only unresolved issues are returned. If true, both resolved and unresolved are returned."
-    )
-
-class SonarQubeGetProjectMeasuresTool(AbstractTool):
-    """Extracts specific code quality measures (coverage, bugs, code smells) for a project."""
-    name: str = "sonarqube_get_project_measures"
-    description: str = "Fetches code metrics (bugs, vulnerabilities, code smells, unit test coverage) of a project component."
-    args_schema: Type[BaseModel] = GetProjectMeasuresInput
-    sonarqube_client: SonarQubeAPIClient
-
-    def _run(self, project_key: str, metric_keys: str, run_manager: Optional[CallbackManagerForToolRun] = None) -> str:
-        params = {
-            "component": project_key,
-            "metricKeys": metric_keys
-        }
-        res = self.sonarqube_client.make_request("GET", "api/measures/component", params=params)
-        return json.dumps(res)
-
-    async def _arun(self, project_key: str, metric_keys: str, run_manager: Optional[AsyncCallbackManagerForToolRun] = None) -> str:
-        params = {
-            "component": project_key,
-            "metricKeys": metric_keys
-        }
-        res = await self.sonarqube_client.make_async_request("GET", "api/measures/component", params=params)
-        return json.dumps(res)
-
-class SonarQubeGetProjectIssuesTool(AbstractTool):
-    """Retrieves list of code quality issues (bugs, vulnerabilities, smells) for a project."""
-    name: str = "sonarqube_get_project_issues"
-    description: str = "Fetches code quality issues (bugs, vulnerabilities, code smells) for a project with options to filter by type and severity."
-    args_schema: Type[BaseModel] = GetProjectIssuesInput
-    sonarqube_client: SonarQubeAPIClient
-
-    def _run(
-        self,
-        project_key: str,
-        severities: str = "",
-        types: str = "",
-        resolved: bool = False,
-        run_manager: Optional[CallbackManagerForToolRun] = None,
-    ) -> str:
-        params = {
-            "componentKeys": project_key,
-            "resolved": "true" if resolved else "false"
-        }
-        if severities:
-            params["severities"] = severities
-        if types:
-            params["types"] = types
-        res = self.sonarqube_client.make_request("GET", "api/issues/search", params=params)
-        return json.dumps(res)
-
-    async def _arun(
-        self,
-        project_key: str,
-        severities: str = "",
-        types: str = "",
-        resolved: bool = False,
-        run_manager: Optional[AsyncCallbackManagerForToolRun] = None,
-    ) -> str:
-        params = {
-            "componentKeys": project_key,
-            "resolved": "true" if resolved else "false"
-        }
-        if severities:
-            params["severities"] = severities
-        if types:
-            params["types"] = types
-        res = await self.sonarqube_client.make_async_request("GET", "api/issues/search", params=params)
-        return json.dumps(res)
-
+class ListGithubReposInput(ToolInputSchema):
+    organization: str = Field(description="The GitHub organization/user account name in SonarCloud (e.g. 'synchropia').")
+    alm_setting: str = Field(default="github", description="The DevOps platform setting key.")
 
 sonarqube_client = SonarQubeAPIClient()
 
 __all__ = [
     "sonarqube_client",
-    "SonarQubeGetProjectStatusTool",
-    "SonarQubeGetProjectMeasuresTool",
-    "SonarQubeGetProjectIssuesTool",
-    "SonarQubeImportGitHubProjectTool"
+    "SonarQubeGetProjectStatusTool"
 ]
-
 
 if __name__ == "__main__":
     client = SonarQubeAPIClient()
-    import_projects_tool = SonarQubeImportGitHubProjectTool(sonarqube_client=client)
-    try:
-        res = import_projects_tool.invoke({
-                 "organization": "sonarqube" ,
-        "github_repo_id":"1282314054",
-        "project_key":"synchropia",
-       "project_name":"synchropia/Synchropia-web", 
-            }) 
-        print(res)
         
-    except Exception as e:
-        logger.error(f"error importing projects into the sonarqube repo: {e}")
+        # 1. Discover repositories to find their numerical IDs
+    tool = SonarQubeListGithubReposTool(sonarqube_client=client)
+    

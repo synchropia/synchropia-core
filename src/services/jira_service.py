@@ -515,9 +515,21 @@ __all__ = [
 ]
 
 if __name__ == "__main__":
-    jira_client = JiraAPIClient()
-    jira_myself_tool = JiraGetMyselfTool(jira_client=jira_client)
-    print(jira_myself_tool.invoke(""))
+    try:
+        jira_client = JiraAPIClient()
+        
+        # 1. Test connection (will succeed once your .env credentials are correct)
+        jira_myself_tool = JiraGetMyselfTool(jira_client=jira_client)
+        print("User Profile:", jira_myself_tool.invoke(""))
 
-    jira_search_issues_tool = JiraSearchIssuesTool(jira_client=jira_client)
-    print(jira_search_issues_tool.run("JQL: project = 'ERP' AND status = 'Open'"))
+        # 2. Test search (Using a clean, valid JQL query string)
+        jira_search_issues_tool = JiraSearchIssuesTool(jira_client=jira_client)
+        
+        # REMOVED the "JQL: " prefix
+        jql_query = "project = 'ERP' AND status = 'Open'" 
+        
+        print(f"Executing JQL Search: {jql_query}")
+        print("Search Results:", jira_search_issues_tool.run(jql_query))
+        
+    except Exception as e:
+        print(f"Test run execution failed: {e}")
