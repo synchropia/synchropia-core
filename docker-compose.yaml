@@ -140,23 +140,6 @@ services:
     networks:
       - synchropia-net
 
-  # Optional: Avro/JSON/Protobuf schema management for Kafka topics. Remove if you don't need schemas.
-  schema-registry:
-    image: confluentinc/cp-schema-registry:7.6.1
-    container_name: synchropia-schema-registry
-    environment:
-      SCHEMA_REGISTRY_HOST_NAME: schema-registry
-      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: "kafka:29092"
-      SCHEMA_REGISTRY_LISTENERS: "http://0.0.0.0:8085"
-    ports:
-      - "8085:8085"
-    depends_on:
-      kafka:
-        condition: service_healthy
-    restart: unless-stopped
-    networks:
-      - synchropia-net
-
 volumes:
   redis_data:
   postgres_data:

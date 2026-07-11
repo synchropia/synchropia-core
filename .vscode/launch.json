@@ -1,0 +1,44 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Current File (src module)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "cwd": "C:\\Users\\Raghu\\Downloads\\MAS_Agents\\synchropia",
+            "env": {
+                "PYTHONPATH": "C:\\Users\\Raghu\\Downloads\\MAS_Agents\\synchropia"
+            },
+            "python": "C:\\Users\\Raghu\\Downloads\\MAS_Agents\\synchropia\\.venv\\Scripts\\python.exe",
+            "justMyCode": true
+        },
+        {
+            "name": "Python: Run main.py",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "C:\\Users\\Raghu\\Downloads\\MAS_Agents\\synchropia\\main.py",
+            "console": "integratedTerminal",
+            "cwd": "C:\\Users\\Raghu\\Downloads\\MAS_Agents\\synchropia",
+            "env": {
+                "PYTHONPATH": "C:\\Users\\Raghu\\Downloads\\MAS_Agents\\synchropia"
+            },
+            "python": "C:\\Users\\Raghu\\Downloads\\MAS_Agents\\synchropia\\.venv\\Scripts\\python.exe",
+            "justMyCode": true
+        },
+        {
+            "name": "Python: Run as Module (-m)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "src.services.github_core",
+            "console": "integratedTerminal",
+            "cwd": "C:\\Users\\Raghu\\Downloads\\MAS_Agents\\synchropia",
+            "env": {
+                "PYTHONPATH": "C:\\Users\\Raghu\\Downloads\\MAS_Agents\\synchropia"
+            },
+            "python": "C:\\Users\\Raghu\\Downloads\\MAS_Agents\\synchropia\\.venv\\Scripts\\python.exe",
+            "justMyCode": true
+        }
+    ]
+}
