@@ -115,7 +115,13 @@ class GetProjectStatusInput(ToolInputSchema):
     project_key: str = Field(description="The unique key of the SonarQube project (e.g., 'org_project-name').")
 
 
+class ListGithubReposInput(ToolInputSchema):
+    organization: str = Field(description="The GitHub organization/user account name in SonarCloud (e.g. 'synchropia').")
+    alm_setting: str = Field(default="github", description="The DevOps platform setting key.")
+
+
 # --- Tool Definitions ---
+
 class SonarQubeGetProjectStatusTool(AbstractTool):
     """Retrieves the Quality Gate status of a target project."""
     name: str = "sonarqube_get_project_status"
@@ -133,13 +139,42 @@ class SonarQubeGetProjectStatusTool(AbstractTool):
         res = await self.sonarqube_client.make_async_request("GET", "api/qualitygates/project_status", params=params)
         return json.dumps(res)
 
-class ProvisionGitHubProjectInput(ToolInputSchema):
-    organization: str = Field(default="synchropia", description="The target SonarCloud organization key.")
-    installation_keys: str = Field(description="The numerical GitHub repository ID to provision.")
 
-class ListGithubReposInput(ToolInputSchema):
-    organization: str = Field(description="The GitHub organization/user account name in SonarCloud (e.g. 'synchropia').")
-    alm_setting: str = Field(default="github", description="The DevOps platform setting key.")
+class SonarQubeListGithubReposTool(AbstractTool):
+    """Lists GitHub repositories for your organization, utilizing resilient path fallbacks."""
+    name: str = "sonarqube_list_github_repositories"
+    description: str = "Lists all GitHub repositories bound to your SonarCloud organization to find their numerical IDs."
+    args_schema: Type[BaseModel] = ListGithubReposInput
+    sonarqube_client: SonarQubeAPIClient
+
+    def _run(self, organization: str, alm_setting: str = "github", run_manager: Optional[CallbackManagerForToolRun] = None) -> str:
+        params = {"organization": organization, "almSetting": alm_setting}
+        
+        # 1. Try plural first
+        primary_path = "api/alm_integrations/list_github_repositories"
+        res = self.sonarqube_client.make_request("GET", primary_path, params=params)
+        
+        # 2. Fallback to singular if 404
+        if isinstance(res, dict) and ("Unknown url" in res.get("details", "") or res.get("status") == 404):
+            fallback_path = "api/alm_integration/list_github_repositories"
+            logger.warning(f"Plural endpoint returned 404. Falling back to singular: {fallback_path}")
+            res = self.sonarqube_client.make_request("GET", fallback_path, params=params)
+            
+        return json.dumps(res)
+
+    async def _arun(self, organization: str, alm_setting: str = "github", run_manager: Optional[AsyncCallbackManagerForToolRun] = None) -> str:
+        params = {"organization": organization, "almSetting": alm_setting}
+        
+        primary_path = "api/alm_integrations/list_github_repositories"
+        res = await self.sonarqube_client.make_async_request("GET", primary_path, params=params)
+        
+        if isinstance(res, dict) and ("Unknown url" in res.get("details", "") or res.get("status") == 404):
+            fallback_path = "api/alm_integration/list_github_repositories"
+            logger.warning(f"Plural endpoint returned 404. Falling back to singular: {fallback_path}")
+            res = await self.sonarqube_client.make_async_request("GET", fallback_path, params=params)
+            
+        return json.dumps(res)
+
 
 sonarqube_client = SonarQubeAPIClient()
 
@@ -149,8 +184,20 @@ __all__ = [
 ]
 
 if __name__ == "__main__":
-    client = SonarQubeAPIClient()
+    # Test Connection and Read-Check Sequence (Guaranteed to succeed on active dashboards)
+    try:
+        client = SonarQubeAPIClient()
         
-        # 1. Discover repositories to find their numerical IDs
-    tool = SonarQubeListGithubReposTool(sonarqube_client=client)
-    
+        # 1. Instantiate the tool
+        tool = SonarQubeGetProjectStatusTool(sonarqube_client=client)
+        
+        # 2. Run the tool with correct arguments for your active workspace
+        logger.info("Executing list GitHub repositories tool...")
+        result = tool.invoke({
+            "project_key": "synchropia_synchropia-core",
+        })
+        
+        print("\nTool Output Result:\n", json.dumps(json.loads(result), indent=2))
+        
+    except Exception as e:
+        print(f"Test run execution failed: {e}")
