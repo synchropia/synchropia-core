@@ -15,9 +15,6 @@ class Settings(BaseSettings):
     GITHUB_APP_PRIVATE_KEY_PATH: str
     GITHUB_INSTALLATION_ID: str
     
-    # Mem0 credentials 
-    MEM0_API_KEY:str
-    
     # SonarQube credentials 
     SONARQUBE_API_KEY:str 
     SONARQUBE_BASE_URL: str = "https://sonarcloud.io"
