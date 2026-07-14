@@ -46,17 +46,28 @@ class ChatSelfHosted(BaseChatModel):
     def _prepare_payload(self, messages: List[BaseMessage], **kwargs: Any) -> Dict[str, Any]:
         processed_messages = []
         for m in messages:
-            if isinstance(m, SystemMessage): processed_messages.append({"role": "system", "content": m.content})
-            elif isinstance(m, HumanMessage): processed_messages.append({"role": "user", "content": m.content})
+            if isinstance(m, SystemMessage):
+                processed_messages.append({"role": "system", "content": m.content})
+            elif isinstance(m, HumanMessage):
+                processed_messages.append({"role": "user", "content": m.content})
             elif isinstance(m, AIMessage):
-                msg_dict = {"role": "assistant", "content": m.content or ""}
+                # Format tool calls in content string if self-hosted
+                content = m.content or ""
                 if m.tool_calls:
-                    msg_dict["tool_calls"] = [{"id": tc["id"], "type": "function", "function": {"name": tc["name"], "arguments": json.dumps(tc["args"])}} for tc in m.tool_calls]
-                processed_messages.append(msg_dict)
-            elif isinstance(m, ToolMessage): processed_messages.append({"role": "tool", "content": m.content, "tool_call_id": m.tool_call_id})
-            else: raise TypeError(f"Unsupported message type: {type(m)}")
+                    for tc in m.tool_calls:
+                        content += f"\n[Action: Called tool '{tc['name']}' with arguments: {json.dumps(tc['args'])}]"
+                processed_messages.append({"role": "assistant", "content": content})
+            elif isinstance(m, ToolMessage):
+                # Map ToolMessage to a user role message to prevent template validation crashes
+                processed_messages.append({
+                    "role": "user",
+                    "content": f"[Tool Output ({m.name or 'tool'}): {m.content}]"
+                })
+            else:
+                raise TypeError(f"Unsupported message type: {type(m)}")
         payload = {"model": self.model_name, "messages": processed_messages, "temperature": self.temperature, **kwargs}
-        if "tools" in payload and payload["tools"] is None: del payload["tools"]
+        if "tools" in payload and payload["tools"] is None:
+            del payload["tools"]
         return payload
 
     def _send_request(self, messages: List[BaseMessage], **kwargs: Any) -> Dict[str, Any]:
@@ -127,6 +138,7 @@ class ChatSelfHosted(BaseChatModel):
         url = f"{self.base_url}/v1/chat/completions"
         print(f"DEBUG: Streaming from {url}")
 
+        yielded_chunks = 0
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(url, json=payload, timeout=60) as response:
@@ -169,9 +181,13 @@ class ChatSelfHosted(BaseChatModel):
                                         additional_kwargs={"reasoning_content": reasoning_content} if reasoning_content else {}
                                     )
                                     generation_chunk = ChatGenerationChunk(message=message_chunk)
+                                    yielded_chunks += 1
                                     yield generation_chunk
                             except Exception as ex:
                                 logger.warning(f"Error parsing stream choice chunk: {ex}")
+            if yielded_chunks == 0:
+                logger.warning("Empty response stream from local model server. Emitting fallback chunk.")
+                yield ChatGenerationChunk(message=AIMessageChunk(content=""))
         except Exception as e:
             print(f"ERROR: LLM Stream failed: {str(e)}")
             raise
