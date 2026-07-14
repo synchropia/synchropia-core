@@ -96,4 +96,5 @@ class RedisRateLimiter:
         except Exception as e:
             logger.error(f"[RateLimiter] SQLite rate limit check failed: {e}. Defaulting to allowing request.")
             return True
+            
 rate_limiter = RedisRateLimiter()

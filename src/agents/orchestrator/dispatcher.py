@@ -5,11 +5,12 @@ Multi-Agent Swarm Orchestration Graph with Subgraph Handoffs.
 Assembles all swarm agents into a coordinate parent StateGraph.
 """
 
-import os
+from anthropic import __name
+import asyncio
 import uuid
 from typing import Annotated, Any, Dict, List, Literal
 from typing_extensions import NotRequired, TypedDict
-from langchain_core.messages import BaseMessage, AIMessage, ToolMessage
+from langchain_core.messages import BaseMessage, AIMessage, ToolMessage,HumanMessage
 from langgraph.graph.message import add_messages
 from langgraph.graph import StateGraph, START, END
 from langchain_core.runnables import RunnableConfig
@@ -35,11 +36,13 @@ from src.agents.data_engineering.ai.index import build_ai_agent, AIEngineerAgent
 from datetime import datetime, timezone
 
 from langgraph.checkpoint.memory import MemorySaver
+
 memory_checkpointer = MemorySaver()
 
 class SwarmState(TypedDict):
     messages: Annotated[List[BaseMessage], add_messages]
     active_agent: NotRequired[str]
+
 
 async def build_swarm_orchestrator(
     org: str,
@@ -63,36 +66,44 @@ async def build_swarm_orchestrator(
     mlops_agent = await build_mlops_agent(MLOpsAgentHarness(), provider, org, **llm_kwargs)
     ai_agent = await build_ai_agent(AIEngineerAgentHarness(), provider, org, **llm_kwargs)
 
+    # Helper to inject agent name into metadata configuration
+    def _with_agent_metadata(config: RunnableConfig, agent_name: str) -> RunnableConfig:
+        local_config = dict(config or {})
+        metadata = dict(local_config.get("metadata") or {})
+        metadata["agent_name"] = agent_name
+        local_config["metadata"] = metadata
+        return local_config
+
     # 2. Define node wrappers calling child subgraphs
     async def call_architect(state: SwarmState, config: RunnableConfig):
-        return await architect_agent.ainvoke(state, config)
+        return await architect_agent.ainvoke(state, _with_agent_metadata(config, "architect"))
 
     async def call_pm(state: SwarmState, config: RunnableConfig):
-        return await pm_agent.ainvoke(state, config)
+        return await pm_agent.ainvoke(state, _with_agent_metadata(config, "pm"))
 
     async def call_devops(state: SwarmState, config: RunnableConfig):
-        return await devops_agent.ainvoke(state, config)
+        return await devops_agent.ainvoke(state, _with_agent_metadata(config, "devops"))
 
     async def call_qa(state: SwarmState, config: RunnableConfig):
-        return await qa_agent.ainvoke(state, config)
+        return await qa_agent.ainvoke(state, _with_agent_metadata(config, "qa"))
 
     async def call_frontend(state: SwarmState, config: RunnableConfig):
-        return await frontend_agent.ainvoke(state, config)
+        return await frontend_agent.ainvoke(state, _with_agent_metadata(config, "frontend"))
 
     async def call_backend(state: SwarmState, config: RunnableConfig):
-        return await backend_agent.ainvoke(state, config)
+        return await backend_agent.ainvoke(state, _with_agent_metadata(config, "backend"))
 
     async def call_data_engineer(state: SwarmState, config: RunnableConfig):
-        return await data_engineer_agent.ainvoke(state, config)
+        return await data_engineer_agent.ainvoke(state, _with_agent_metadata(config, "data_engineer"))
 
     async def call_data_scientist(state: SwarmState, config: RunnableConfig):
-        return await data_scientist_agent.ainvoke(state, config)
+        return await data_scientist_agent.ainvoke(state, _with_agent_metadata(config, "data_scientist"))
 
     async def call_mlops(state: SwarmState, config: RunnableConfig):
-        return await mlops_agent.ainvoke(state, config)
+        return await mlops_agent.ainvoke(state, _with_agent_metadata(config, "mlops"))
 
     async def call_ai(state: SwarmState, config: RunnableConfig):
-        return await ai_agent.ainvoke(state, config)
+        return await ai_agent.ainvoke(state, _with_agent_metadata(config, "ai"))
 
     # 3. State router configuration
     agent_names = [
@@ -361,3 +372,22 @@ async def run_swarm(
             except Exception as dbe:
                 logger.warning(f"Swarm Database error logging failed: {dbe}")
         raise
+
+async def run_test():
+    run_id = str(uuid.uuid4())
+    session_id = str(uuid.uuid4())
+    
+    swarm_graph = await build_swarm_orchestrator(org="Synchropia")
+
+    messages = [HumanMessage(content="Hello , can u transfer the handoff only to a PM Agent , I want to talk to it")]
+    state = await swarm_graph.ainvoke({"messages": messages}, config={"configurable": {"thread_id": session_id}})
+
+    for message in state['messages']:
+        if message.type == 'ai':
+            print("AI:", message.content)
+
+if __name__ == "__main__":
+    asyncio.run(run_test())
+
+
+    

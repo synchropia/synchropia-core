@@ -9,9 +9,11 @@ wheels/
 cli_stream_architect.py
 digest.txt 
 mlflow.db 
+sse_client.py
 response 
 # Virtual environments
 .venv
 .env*
 .db 
 test_*
+ 

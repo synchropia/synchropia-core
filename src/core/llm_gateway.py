@@ -25,7 +25,7 @@ import requests
 from typing import List, Optional, Any, Sequence, Union, Callable, Type, Dict
 from pydantic import BaseModel
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage, AIMessageChunk, ToolCallChunk
 from langchain_core.outputs import ChatGeneration, ChatResult, ChatGenerationChunk
 from langchain_core.runnables import Runnable
 from langchain_core.tools import BaseTool
@@ -85,8 +85,13 @@ class ChatSelfHosted(BaseChatModel):
         resp_json = self._send_request(messages, **kwargs)
         message_data = resp_json["choices"][0]["message"]
         content = message_data.get("content", "") or ""
+        reasoning_content = message_data.get("reasoning_content", "") or ""
         tool_calls = parse_tool_calls(message_data["tool_calls"]) if message_data.get("tool_calls") else []
-        ai_message = AIMessage(content=content, tool_calls=tool_calls)
+        ai_message = AIMessage(
+            content=content,
+            tool_calls=tool_calls,
+            additional_kwargs={"reasoning_content": reasoning_content} if reasoning_content else {}
+        )
         return ChatResult(generations=[ChatGeneration(message=ai_message)])
 
     def bind_tools(self, tools: Sequence[Union[Dict, Type[BaseModel], Callable, BaseTool]], **kwargs: Any) -> Runnable:
@@ -98,8 +103,13 @@ class ChatSelfHosted(BaseChatModel):
         resp_json = await loop.run_in_executor(None, lambda: self._send_request(messages, **kwargs))
         message_data = resp_json["choices"][0]["message"]
         content = message_data.get("content", "") or ""
+        reasoning_content = message_data.get("reasoning_content", "") or ""
         tool_calls = parse_tool_calls(message_data["tool_calls"]) if message_data.get("tool_calls") else []
-        ai_message = AIMessage(content=content, tool_calls=tool_calls)
+        ai_message = AIMessage(
+            content=content,
+            tool_calls=tool_calls,
+            additional_kwargs={"reasoning_content": reasoning_content} if reasoning_content else {}
+        )
         return ChatResult(generations=[ChatGeneration(message=ai_message)])
 
     async def _astream(
@@ -110,7 +120,6 @@ class ChatSelfHosted(BaseChatModel):
         **kwargs: Any,
     ) -> AsyncIterator[ChatGenerationChunk]:
         from typing import AsyncIterator
-        from langchain_core.messages import AIMessageChunk
         import aiohttp
 
         payload = self._prepare_payload(messages, **kwargs)
@@ -138,30 +147,34 @@ class ChatSelfHosted(BaseChatModel):
                                 chunk_data = json.loads(data_str)
                                 choice = chunk_data.get("choices", [{}])[0]
                                 delta = choice.get("delta", {})
-                                content = delta.get("content", "")
-                                tool_calls = delta.get("tool_calls", [])
+                                content = delta.get("content") or ""
+                                reasoning_content = delta.get("reasoning_content") or ""
+                                tool_calls = delta.get("tool_calls") or []
 
-                                if content or tool_calls:
+                                if content or tool_calls or reasoning_content:
                                     tc_chunks = []
                                     for tc in tool_calls:
-                                        tc_chunks.append({
-                                            "index": tc.get("index", 0),
-                                            "id": tc.get("id"),
-                                            "name": tc.get("function", {}).get("name"),
-                                            "args": tc.get("function", {}).get("arguments")
-                                        })
-                                    message_chunk = AIMessageChunk(content=content, tool_call_chunks=tc_chunks)
+                                        tc_chunks.append(
+                                            ToolCallChunk(
+                                                name=tc.get("function", {}).get("name"),
+                                                args=tc.get("function", {}).get("arguments"),
+                                                id=tc.get("id"),
+                                                index=tc.get("index", 0)
+                                            )
+                                        )
+                                    chunk_text = content
+                                    message_chunk = AIMessageChunk(
+                                        content=chunk_text, 
+                                        tool_call_chunks=tc_chunks,
+                                        additional_kwargs={"reasoning_content": reasoning_content} if reasoning_content else {}
+                                    )
                                     generation_chunk = ChatGenerationChunk(message=message_chunk)
                                     yield generation_chunk
-
-                                    if run_manager:
-                                        await run_manager.on_llm_new_token(content)
-                            except Exception:
-                                pass
+                            except Exception as ex:
+                                logger.warning(f"Error parsing stream choice chunk: {ex}")
         except Exception as e:
             print(f"ERROR: LLM Stream failed: {str(e)}")
             raise
-
 
 @dataclass
 class ProviderInfo:
@@ -176,7 +189,6 @@ class ProviderInfo:
     supports_tools: bool
     supports_embeddings: bool
     max_tokens: Optional[int] = None
-
 
 @dataclass
 class ModelInfo:

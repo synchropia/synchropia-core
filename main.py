@@ -114,7 +114,7 @@ app = FastAPI(
 # Set up CORS middleware for premium UI integration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Adjust for production
+    allow_origins=["http://localhost:3000"],  # Adjust for production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

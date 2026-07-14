@@ -9,9 +9,18 @@ from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.tools import tool
 from langchain.tools import ToolRuntime
 from langgraph.types import Command
+from src.utils.logger import logger
 
 def _create_transfer_command(agent_name: str, runtime: ToolRuntime) -> Command:
     """Helper to construct the handoff Command."""
+    source_agent = "unknown_agent"
+    if runtime.config and "metadata" in runtime.config:
+        source_agent = runtime.config["metadata"].get("agent_name") or source_agent
+    if source_agent == "unknown_agent" and "active_agent" in runtime.state:
+        source_agent = runtime.state["active_agent"]
+
+    logger.info(f"Agent Handoff: '{source_agent}' transferring conversation control to '{agent_name}' agent.")
+    
     # Find the last AI message that triggered the tool call
     last_ai_message = next(
         (msg for msg in reversed(runtime.state["messages"]) if isinstance(msg, AIMessage)),
@@ -20,7 +29,6 @@ def _create_transfer_command(agent_name: str, runtime: ToolRuntime) -> Command:
     if not last_ai_message:
         # Fallback to creating a mock AI message if none exists
         last_ai_message = AIMessage(content=f"Initiating transfer to {agent_name}")
-
     transfer_message = ToolMessage(
         content=f"Transferred to {agent_name} agent.",
         tool_call_id=runtime.tool_call_id,

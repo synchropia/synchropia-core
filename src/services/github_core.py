@@ -2155,7 +2155,6 @@ class GetTreeTool(AbstractTool):
             results.append(item)
         return results
 
-
 __all__ = [
     "GitHubAPIClient",
     "ListRepositoriesTool",

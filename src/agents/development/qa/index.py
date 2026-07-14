@@ -18,7 +18,6 @@ from src.services.kafka_service import KafkaAgentCallbackHandler, kafka_client
 from src.services.database import get_db_session
 from src.models.db_models import Organization, Session as DBSession, OrchestrationRun, AgentExecution, MessageLog, Artifact
 from datetime import datetime, timezone
-
 from langgraph.checkpoint.memory import MemorySaver
 memory_checkpointer = MemorySaver()
 

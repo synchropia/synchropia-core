@@ -3,7 +3,7 @@ agents/utils/harness_base.py
 --------------------
 Shared base class and sandbox execution backends for Synchropia agent harnesses.
 """
-
+import platform
 import asyncio
 import os
 import subprocess
@@ -12,6 +12,7 @@ from functools import cached_property
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, List
+
 from typing_extensions import override, AsyncContextManager, Self
 
 from deepagents.backends.sandbox import BaseSandbox
@@ -27,6 +28,7 @@ except ModuleNotFoundError:
 
 from src.services import * 
 from src.config.settings import settings
+from src.agents.utils.handoffs import HANDOFF_TOOLS
 
 io_executor = ThreadPoolExecutor(max_workers=4)
 
@@ -260,7 +262,7 @@ class BaseAgentHarness:
             self.backend = LocalPowerShellBackend(sandbox_name=sandbox_name)
 
         # Initialize tool list with unified handoff tools
-        from src.agents.utils.handoffs import HANDOFF_TOOLS
+  
         self.tools: List[Any] = list(HANDOFF_TOOLS)
 
     @staticmethod
@@ -279,3 +281,8 @@ class BaseAgentHarness:
                 self.tools.append(t_cls(**client_kwargs))
             except Exception as e:
                 print(f"[{self.__class__.__name__}] Skipping {t_cls.__name__}: {e}")
+
+if __name__ == "__main__":
+    baseagentharness = BaseAgentHarness("test-sandbox")
+    print(baseagentharness.backend.execute("dir").output)\
+    

@@ -117,6 +117,8 @@ class KafkaAgentCallbackHandler(BaseCallbackHandler):
         self.default_agent_name = default_agent_name
         self.run_id: str | None = None
         self.session_id: str | None = session_id
+        self._tool_names: dict[str, str] = {}
+        self._llm_agents: dict[str, str] = {}
         try:
             self.loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -139,6 +141,7 @@ class KafkaAgentCallbackHandler(BaseCallbackHandler):
         source_agent: str, 
         run_id: Any, 
         tool_name: Optional[str] = None,
+        target_agent: Optional[str] = None,
         payload: dict = None, 
         error_details: str = None
     ) -> dict:
@@ -149,6 +152,7 @@ class KafkaAgentCallbackHandler(BaseCallbackHandler):
             run_id=resolved_run_id,
             session_id=self.session_id or "default_session",
             tool_name=tool_name,
+            target_agent=target_agent,
             event_type=event_type,
             source_agent=source_agent,
             payload=payload or {},
@@ -157,11 +161,13 @@ class KafkaAgentCallbackHandler(BaseCallbackHandler):
         
         # Conforming to SwarmEvent dict but maintaining top-level compatibility
         # for older event consumers by flattening payload & adding alias fields.
+        # Avoid copying 'text' to the top level to eliminate redundancy.
         data = event_obj.model_dump()
         data["event"] = event_type.value
         if payload:
             for k, v in payload.items():
-                data[k] = v
+                if k != "text":
+                    data[k] = v
         if error_details:
             data["error"] = error_details
             data["message"] = error_details
@@ -199,6 +205,22 @@ class KafkaAgentCallbackHandler(BaseCallbackHandler):
         except Exception as e:
             logger.error(f"Kafka fallback publish failed: {e}")
 
+    def on_llm_start(
+        self,
+        serialized: Dict[str, Any],
+        prompts: List[str],
+        *,
+        run_id: Any,
+        parent_run_id: Optional[Any] = None,
+        tags: Optional[list[str]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> Any:
+        """Track LLM run ID and map it to the active agent name."""
+        meta = metadata or kwargs.get("metadata")
+        agent_name = self._get_agent_name(meta)
+        self._llm_agents[str(run_id)] = agent_name
+
     def on_llm_new_token(
         self,
         token: str | list[str | dict[str, Any]],
@@ -210,7 +232,7 @@ class KafkaAgentCallbackHandler(BaseCallbackHandler):
         **kwargs: Any,
     ) -> Any:
         """Publish individual generated tokens for real-time streaming."""
-        agent_name = self._get_agent_name(kwargs.get("metadata"))
+        agent_name = self._llm_agents.get(str(run_id)) or self._get_agent_name(kwargs.get("metadata"))
         token_str = token if isinstance(token, str) else json.dumps(token)
         event = self._create_event(
             event_type=EventType.TOKEN,
@@ -230,7 +252,7 @@ class KafkaAgentCallbackHandler(BaseCallbackHandler):
         **kwargs: Any,
     ) -> Any:
         """Publish the final generation text of the agent."""
-        agent_name = self._get_agent_name(kwargs.get("metadata"))
+        agent_name = self._llm_agents.pop(str(run_id), None) or self._get_agent_name(kwargs.get("metadata"))
         for generation_list in response.generations:
             for generation in generation_list:
                 event = self._create_event(
@@ -251,7 +273,7 @@ class KafkaAgentCallbackHandler(BaseCallbackHandler):
         **kwargs: Any,
     ) -> Any:
         """Publish LLM error events."""
-        agent_name = self._get_agent_name(kwargs.get("metadata"))
+        agent_name = self._llm_agents.pop(str(run_id), None) or self._get_agent_name(kwargs.get("metadata"))
         event = self._create_event(
             event_type=EventType.AGENT_ERROR,
             source_agent=agent_name,
@@ -275,10 +297,15 @@ class KafkaAgentCallbackHandler(BaseCallbackHandler):
         meta = metadata or kwargs.get("metadata")
         agent_name = self._get_agent_name(meta)
         tool_name = serialized.get("name", "unknown_tool")
+        self._tool_names[str(run_id)] = tool_name
+        target_agent = None
+        if tool_name.startswith("transfer_to_"):
+            target_agent = tool_name[len("transfer_to_"):]
         event = self._create_event(
             event_type=EventType.TOOL_CALL,
             source_agent=agent_name,
             tool_name=tool_name,
+            target_agent=target_agent,
             run_id=run_id,
             payload={"tool": tool_name, "input": input_str}
         )
@@ -315,17 +342,27 @@ class KafkaAgentCallbackHandler(BaseCallbackHandler):
         self,
         output: Any,
         *,
-        tool_name: str,
         run_id: Any,
         parent_run_id: Optional[Any] = None,
+        tool_name: Optional[str] = None,
         **kwargs: Any,
     ) -> Any:
         """Publish tool execution outputs."""
+        if tool_name is None:
+            tool_name = self._tool_names.pop(str(run_id), "unknown_tool")
+        else:
+            self._tool_names.pop(str(run_id), None)
         agent_name = self._get_agent_name(kwargs.get("metadata"))
+        target_agent = None
+        event_type = EventType.TOOL_RESPONSE
+        if tool_name.startswith("transfer_to_"):
+            target_agent = tool_name[len("transfer_to_"):]
+            event_type = EventType.HANDOFF
         event = self._create_event(
-            event_type=EventType.TOOL_RESPONSE,
+            event_type=event_type,
             source_agent=agent_name,
             tool_name=tool_name,
+            target_agent=target_agent,
             run_id=run_id,
             payload={"output": str(output), "tool": tool_name}
         )
@@ -351,10 +388,16 @@ class KafkaAgentCallbackHandler(BaseCallbackHandler):
         **kwargs: Any,
     ) -> Any:
         """Publish tool execution errors."""
+        tool_name = self._tool_names.pop(str(run_id), "unknown_tool")
+        target_agent = None
+        if tool_name.startswith("transfer_to_"):
+            target_agent = tool_name[len("transfer_to_"):]
         agent_name = self._get_agent_name(kwargs.get("metadata"))
         event = self._create_event(
             event_type=EventType.TOOL_ERROR,
             source_agent=agent_name,
+            tool_name=tool_name,
+            target_agent=target_agent,
             run_id=run_id,
             error_details=str(error)
         )
