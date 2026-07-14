@@ -5,7 +5,7 @@ build/
 dist/
 wheels/
 *.egg-info
-
+synchropia_rate_limit.db
 cli_stream_architect.py
 digest.txt 
 mlflow.db 
