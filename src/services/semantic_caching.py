@@ -151,8 +151,12 @@ class SemanticCache:
             
             # 4. Store in Redis with TTL
             sync_redis = self.redis_client.sync_client
-            sync_redis.setex(key, self.ttl, json.dumps(payload))
-            logger.success(f"Successfully cached response semantically under key: '{key}' with TTL: {self.ttl}s.")
+            if self.ttl > 0:
+                sync_redis.setex(key, self.ttl, json.dumps(payload))
+                logger.success(f"Successfully cached response semantically under key: '{key}' with TTL: {self.ttl}s.")
+            else:
+                sync_redis.set(key, json.dumps(payload))
+                logger.success(f"Successfully cached response semantically under key: '{key}' with infinite TTL.")
             return True
             
         except Exception as e:

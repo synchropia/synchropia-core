@@ -23,10 +23,14 @@ class ChatStreamRequest(BaseModel):
     temperature: float = 0.7
     max_tokens: int = 1024
     org: str
+    dir_path: str = ""
+    thread_id: str | None = None
+    resume: bool = False
 
 @router.post("/chat/stream", tags=["Chat"])
 async def chat_stream(
     req: ChatStreamRequest,
+    dir_path: str | None = None,
     # current_user: dict = Depends(get_current_user)
 ):
     """
@@ -35,7 +39,11 @@ async def chat_stream(
     """
     run_id = str(uuid.uuid4())
     # user_id = current_user.get("sub") or "default_user"
-    user_id = str(uuid.uuid4())
+    user_id = req.thread_id or str(uuid.uuid4())
+
+    resolved_dir_path = dir_path or req.dir_path or None
+    if resolved_dir_path == "":
+        resolved_dir_path = None
 
     async def sse_event_generator():
         # 1. Consume from Kafka topics and yield events
@@ -53,12 +61,14 @@ async def chat_stream(
                 provider=req.provider,
                 run_id=run_id,
                 org=req.org,
-                user_id=user_id
+                user_id=user_id,
+                resume=req.resume,
+                dir_path=resolved_dir_path
             )
         )
 
         try:
-            yield f"data: {json.dumps({'event': 'connected', 'run_id': run_id})}\n\n"
+            yield f"data: {json.dumps({'event': 'connected', 'run_id': run_id, 'thread_id': user_id})}\n\n"
             
             while True:
                 try:
