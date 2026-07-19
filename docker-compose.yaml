@@ -3,16 +3,17 @@ services:
   # Redis — cache / pub-sub
   # ──────────────────────────────────────────────────────────
   redis:
-    image: redis:7-alpine
+    image: redis/redis-stack-server:latest
     container_name: synchropia-redis
-    command: >
-      redis-server
-      --requirepass ${REDIS_PASSWORD:-redispass}
-      --appendonly yes
-      --appendfsync everysec
-      --maxmemory 256mb
-      --maxmemory-policy allkeys-lru
-      --loglevel warning
+    environment:
+      # redis-stack-server reads config from REDIS_ARGS (not --command args)
+      REDIS_ARGS: >-
+        --requirepass ${REDIS_PASSWORD:-redispass}
+        --appendonly yes
+        --appendfsync everysec
+        --maxmemory 512mb
+        --maxmemory-policy allkeys-lru
+        --loglevel warning
     ports:
       - "6379:6379"
     volumes:
@@ -22,7 +23,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 10s
+      start_period: 15s
     restart: unless-stopped
     networks:
       - synchropia-net
