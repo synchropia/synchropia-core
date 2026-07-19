@@ -62,9 +62,16 @@ class SonarQubeAPIClient:
         self.async_client = httpx.AsyncClient(auth=self.auth, timeout=30.0)
         logger.success("SonarQube API client initialized successfully.")
 
-    def __del__(self):
+    def close(self):
+        """Gracefully close the HTTP client sessions."""
         try:
             self.sync_client.close()
+        except Exception:
+            pass
+
+    def __del__(self):
+        try:
+            self.close()
         except Exception:
             pass
 

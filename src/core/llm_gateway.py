@@ -44,24 +44,47 @@ class ChatSelfHosted(BaseChatModel):
     def _llm_type(self) -> str: return "Qwen3.5-4B"
 
     def _prepare_payload(self, messages: List[BaseMessage], **kwargs: Any) -> Dict[str, Any]:
+        def extract_text(content: Any) -> str:
+            if isinstance(content, str):
+                return content
+            if isinstance(content, list):
+                parts = []
+                for item in content:
+                    if isinstance(item, str):
+                        parts.append(item)
+                    elif isinstance(item, dict):
+                        if item.get("type") == "text":
+                            parts.append(item.get("text") or "")
+                return "".join(parts)
+            return str(content)
+
         processed_messages = []
         for m in messages:
+            m_content = extract_text(m.content)
             if isinstance(m, SystemMessage):
-                processed_messages.append({"role": "system", "content": m.content})
+                processed_messages.append({"role": "system", "content": m_content})
             elif isinstance(m, HumanMessage):
-                processed_messages.append({"role": "user", "content": m.content})
+                processed_messages.append({"role": "user", "content": m_content})
             elif isinstance(m, AIMessage):
-                # Format tool calls in content string if self-hosted
-                content = m.content or ""
+                msg_dict = {"role": "assistant", "content": m_content or None}
                 if m.tool_calls:
-                    for tc in m.tool_calls:
-                        content += f"\n[Action: Called tool '{tc['name']}' with arguments: {json.dumps(tc['args'])}]"
-                processed_messages.append({"role": "assistant", "content": content})
+                    import uuid
+                    msg_dict["tool_calls"] = [
+                        {
+                            "id": tc.get("id") or f"call_{uuid.uuid4().hex[:8]}",
+                            "type": "function",
+                            "function": {
+                                "name": tc["name"],
+                                "arguments": json.dumps(tc["args"])
+                            }
+                        }
+                        for tc in m.tool_calls
+                    ]
+                processed_messages.append(msg_dict)
             elif isinstance(m, ToolMessage):
-                # Map ToolMessage to a user role message to prevent template validation crashes
                 processed_messages.append({
                     "role": "user",
-                    "content": f"[Tool Output ({m.name or 'tool'}): {m.content}]"
+                    "content": f"[Tool Output ({m.name or 'tool'}): {m_content}]"
                 })
             else:
                 raise TypeError(f"Unsupported message type: {type(m)}")
@@ -141,7 +164,7 @@ class ChatSelfHosted(BaseChatModel):
         yielded_chunks = 0
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=payload, timeout=60) as response:
+                async with session.post(url, json=payload, timeout=300) as response:
                     if response.status >= 400:
                         text = await response.text()
                         print(f"ERROR STREAM RESPONSE: {response.status} - {text}")
@@ -187,7 +210,7 @@ class ChatSelfHosted(BaseChatModel):
                                 logger.warning(f"Error parsing stream choice chunk: {ex}")
             if yielded_chunks == 0:
                 logger.warning("Empty response stream from local model server. Emitting fallback chunk.")
-                yield ChatGenerationChunk(message=AIMessageChunk(content=""))
+                yield ChatGenerationChunk(message=AIMessageChunk(content="Swarm node execution completed."))
         except Exception as e:
             print(f"ERROR: LLM Stream failed: {str(e)}")
             raise

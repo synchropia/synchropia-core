@@ -29,6 +29,7 @@ except ModuleNotFoundError:
 from src.services import * 
 from src.config.settings import settings
 from src.agents.utils.handoffs import HANDOFF_TOOLS
+from src.agents.utils.filesystem_tools import CUSTOM_FILESYSTEM_TOOLS
 
 io_executor = ThreadPoolExecutor(max_workers=4)
 
@@ -244,6 +245,11 @@ class BaseAgentHarness:
     """
     Base class for Synchropia agent harnesses.
     Handles sandbox resolution and provides tool registration helper utilities.
+
+    ['transfer_to_architect', 'transfer_to_pm', 'transfer_to_devops', 'transfer_to_qa', 'transfer_to_frontend', 'transfer_to_backend', 'transfer_to_data_engineer', 'transfer_to_data_scientist', 'transfer_to_mlops', 'transfer_to_ai', 'inspect_a_file', 'write_code_to_file', 'refactoring_code', 'extract_content_within_a_file', 'look_for_directory', 'current_directory', 'change_directory', 'navigate_entire_codebase_given_path', 'execute_python_code', 'windows_powershell_command']
+
+    are the Non-negotiable tools for all the swarm agents excluding the PM Agent 
+
     """
 
     def __init__(self, sandbox_name: str):
@@ -263,7 +269,7 @@ class BaseAgentHarness:
 
         # Initialize tool list with unified handoff tools
   
-        self.tools: List[Any] = list(HANDOFF_TOOLS)
+        self.tools: List[Any] = list(HANDOFF_TOOLS) + list(CUSTOM_FILESYSTEM_TOOLS)
 
     @staticmethod
     def _try_init(cls, *args, **kwargs):
@@ -284,5 +290,5 @@ class BaseAgentHarness:
 
 if __name__ == "__main__":
     baseagentharness = BaseAgentHarness("test-sandbox")
-    print(baseagentharness.backend.execute("dir").output)\
+    print([t.name for t in baseagentharness.tools])
     

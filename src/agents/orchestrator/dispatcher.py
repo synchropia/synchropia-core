@@ -21,7 +21,8 @@ from src.services.semantic_caching import semantic_cache
 from src.services.kafka_service import KafkaAgentCallbackHandler, kafka_client
 from src.services.database import get_db_session
 from src.models.db_models import Organization, Session as DBSession, OrchestrationRun, AgentExecution, MessageLog, Artifact
-
+from langgraph.types import interrupt, Command
+from langchain_core.messages import HumanMessage
     # Import agent builders and harnesses dynamically
 from src.agents.orchestrator.architect.index import build_architect_agent, ArchitectAgentHarness
 from src.agents.pm.index import build_pm_agent, PMAgentHarness
@@ -47,6 +48,7 @@ class SwarmState(TypedDict):
 async def build_swarm_orchestrator(
     org: str,
     provider: str = "selfhosted",
+    dir_path: str | None = None,
     **llm_kwargs
 ) -> Any:
     """
@@ -55,16 +57,16 @@ async def build_swarm_orchestrator(
     logger.info("Compiling individual subgraphs for Swarm Orchestrator...")
 
     # 1. Compile subgraphs
-    architect_agent = await build_architect_agent(ArchitectAgentHarness(), provider, org, **llm_kwargs)
-    pm_agent = await build_pm_agent(PMAgentHarness(), provider, org, **llm_kwargs)
-    devops_agent = await build_devops_agent(DevOpsAgentHarness(), provider, org, **llm_kwargs)
-    qa_agent = await build_qa_agent(QAAgentHarness(), provider, org, **llm_kwargs)
-    frontend_agent = await build_frontend_agent(FrontendAgentHarness(), provider, org, **llm_kwargs)
-    backend_agent = await build_backend_agent(BackendAgentHarness(), provider, org, **llm_kwargs)
-    data_engineer_agent = await build_data_engineer_agent(DataEngineerAgentHarness(), provider, org, **llm_kwargs)
-    data_scientist_agent = await build_data_scientist_agent(DataScientistAgentHarness(), provider, org, **llm_kwargs)
-    mlops_agent = await build_mlops_agent(MLOpsAgentHarness(), provider, org, **llm_kwargs)
-    ai_agent = await build_ai_agent(AIEngineerAgentHarness(), provider, org, **llm_kwargs)
+    architect_agent = await build_architect_agent(ArchitectAgentHarness(), provider, org, dir_path=dir_path, **llm_kwargs)
+    pm_agent = await build_pm_agent(PMAgentHarness(), provider, org, dir_path=dir_path, **llm_kwargs)
+    devops_agent = await build_devops_agent(DevOpsAgentHarness(), provider, org, dir_path=dir_path, **llm_kwargs)
+    qa_agent = await build_qa_agent(QAAgentHarness(), provider, org, dir_path=dir_path, **llm_kwargs)
+    frontend_agent = await build_frontend_agent(FrontendAgentHarness(), provider, org, dir_path=dir_path, **llm_kwargs)
+    backend_agent = await build_backend_agent(BackendAgentHarness(), provider, org, dir_path=dir_path, **llm_kwargs)
+    data_engineer_agent = await build_data_engineer_agent(DataEngineerAgentHarness(), provider, org, dir_path=dir_path, **llm_kwargs)
+    data_scientist_agent = await build_data_scientist_agent(DataScientistAgentHarness(), provider, org, dir_path=dir_path, **llm_kwargs)
+    mlops_agent = await build_mlops_agent(MLOpsAgentHarness(), provider, org, dir_path=dir_path, **llm_kwargs)
+    ai_agent = await build_ai_agent(AIEngineerAgentHarness(), provider, org, dir_path=dir_path, **llm_kwargs)
 
     # Helper to inject agent name into metadata configuration
     def _with_agent_metadata(config: RunnableConfig, agent_name: str) -> RunnableConfig:
@@ -76,52 +78,113 @@ async def build_swarm_orchestrator(
 
     # 2. Define node wrappers calling child subgraphs
     async def call_architect(state: SwarmState, config: RunnableConfig):
-        return await architect_agent.ainvoke(state, _with_agent_metadata(config, "architect"))
+        res = await architect_agent.ainvoke(state, _with_agent_metadata(config, "architect"))
+        if isinstance(res, dict):
+            res["active_agent"] = "architect"
+        return res
 
     async def call_pm(state: SwarmState, config: RunnableConfig):
-        return await pm_agent.ainvoke(state, _with_agent_metadata(config, "pm"))
+        res = await pm_agent.ainvoke(state, _with_agent_metadata(config, "pm"))
+        print("PM AGENT RESPONSE: ", res)
+        if isinstance(res, dict):
+            res["active_agent"] = "pm"
+        return res
 
     async def call_devops(state: SwarmState, config: RunnableConfig):
-        return await devops_agent.ainvoke(state, _with_agent_metadata(config, "devops"))
+        res = await devops_agent.ainvoke(state, _with_agent_metadata(config, "devops"))
+        if isinstance(res, dict):
+            res["active_agent"] = "devops"
+        return res
 
     async def call_qa(state: SwarmState, config: RunnableConfig):
-        return await qa_agent.ainvoke(state, _with_agent_metadata(config, "qa"))
+        res = await qa_agent.ainvoke(state, _with_agent_metadata(config, "qa"))
+        if isinstance(res, dict):
+            res["active_agent"] = "qa"
+        return res
 
     async def call_frontend(state: SwarmState, config: RunnableConfig):
-        return await frontend_agent.ainvoke(state, _with_agent_metadata(config, "frontend"))
+        res = await frontend_agent.ainvoke(state, _with_agent_metadata(config, "frontend"))
+        if isinstance(res, dict):
+            res["active_agent"] = "frontend"
+        return res
 
     async def call_backend(state: SwarmState, config: RunnableConfig):
-        return await backend_agent.ainvoke(state, _with_agent_metadata(config, "backend"))
+        res = await backend_agent.ainvoke(state, _with_agent_metadata(config, "backend"))
+        if isinstance(res, dict):
+            res["active_agent"] = "backend"
+        return res
 
     async def call_data_engineer(state: SwarmState, config: RunnableConfig):
-        return await data_engineer_agent.ainvoke(state, _with_agent_metadata(config, "data_engineer"))
+        res = await data_engineer_agent.ainvoke(state, _with_agent_metadata(config, "data_engineer"))
+        if isinstance(res, dict):
+            res["active_agent"] = "data_engineer"
+        return res
 
     async def call_data_scientist(state: SwarmState, config: RunnableConfig):
-        return await data_scientist_agent.ainvoke(state, _with_agent_metadata(config, "data_scientist"))
+        res = await data_scientist_agent.ainvoke(state, _with_agent_metadata(config, "data_scientist"))
+        if isinstance(res, dict):
+            res["active_agent"] = "data_scientist"
+        return res
 
     async def call_mlops(state: SwarmState, config: RunnableConfig):
-        return await mlops_agent.ainvoke(state, _with_agent_metadata(config, "mlops"))
+        res = await mlops_agent.ainvoke(state, _with_agent_metadata(config, "mlops"))
+        if isinstance(res, dict):
+            res["active_agent"] = "mlops"
+        return res
 
     async def call_ai(state: SwarmState, config: RunnableConfig):
-        return await ai_agent.ainvoke(state, _with_agent_metadata(config, "ai"))
+        res = await ai_agent.ainvoke(state, _with_agent_metadata(config, "ai"))
+        if isinstance(res, dict):
+            res["active_agent"] = "ai"
+        return res
 
     # 3. State router configuration
     agent_names = [
         "architect", "pm", "devops", "qa", "frontend",
         "backend"
     ]
+    all_routing_targets = agent_names + ["handoff_checkpoint"]
+
+    async def handoff_checkpoint(state: SwarmState, config: RunnableConfig):
+     
+        # Expose a generic message to mask backend agent names (blackbox)
+        user_prompt = interrupt("Please enter your query for the active agent:")
+        
+        # When resumed, append the user's message and route to the active agent node
+        target_agent = state.get("active_agent") or "architect"
+        return Command(
+            goto=target_agent,
+            update={
+                "messages": [HumanMessage(content=user_prompt)]
+            }
+        )
 
     def route_initial(state: SwarmState) -> str:
         return state.get("active_agent") or "architect"
 
     def route_after_agent(state: SwarmState) -> str:
         messages = state.get("messages", [])
+        active = state.get("active_agent") or "architect"
+        last_desc = messages[-1].__class__.__name__ if messages else "None"
+        print(f"DEBUG: route_after_agent active_agent={active}, last_msg_type={last_desc}")
         if messages:
             last_msg = messages[-1]
-            # If the last message is an AI message and has no pending tool/handoff calls, end the session
+            # Route to handoff_checkpoint if the last message is a handoff tool response
+            if isinstance(last_msg, ToolMessage) and last_msg.content and last_msg.content.startswith("Transferred to "):
+                print("DEBUG: route_after_agent detecting handoff tool response, routing to handoff_checkpoint")
+                return "handoff_checkpoint"
+            # If the last message is an AI message and has no pending tool/handoff calls:
+            # End the session if the coordinator (architect) returned the final response,
+            # otherwise route control back to the architect so the swarm keeps running.
             if isinstance(last_msg, AIMessage) and not last_msg.tool_calls:
-                return "__end__"
-        return state.get("active_agent") or "architect"
+                if active == "architect":
+                    print("DEBUG: route_after_agent returning END")
+                    return "__end__"
+                else:
+                    print(f"DEBUG: route_after_agent worker '{active}' finished, routing back to architect")
+                    return "architect"
+        print(f"DEBUG: route_after_agent returning {active}")
+        return active
 
     # 4. Construct parent graph
     builder = StateGraph(SwarmState)
@@ -133,13 +196,14 @@ async def build_swarm_orchestrator(
     builder.add_node("qa", call_qa)
     builder.add_node("frontend", call_frontend)
     builder.add_node("backend", call_backend)
+    builder.add_node("handoff_checkpoint", handoff_checkpoint)
 
     # Start with initial router
     builder.add_conditional_edges(START, route_initial, agent_names)
 
     # Add routing edges for each node
-    for name in agent_names:
-        builder.add_conditional_edges(name, route_after_agent, agent_names + [END])
+    for name in all_routing_targets:
+        builder.add_conditional_edges(name, route_after_agent, all_routing_targets + [END])
 
     return builder.compile(checkpointer=memory_checkpointer)
 
@@ -149,7 +213,9 @@ async def run_swarm(
     provider: str = "selfhosted",
     run_id: str | None = None,
     org: str,
-    user_id: str = "default_user"
+    user_id: str = "default_user",
+    resume: bool = False,
+    dir_path: str | None = None
 ) -> Any:
     """
     Invokes the parent Swarm Orchestration Graph with full logging and Kafka streaming.
@@ -225,7 +291,7 @@ async def run_swarm(
         logger.warning(f"Failed to query semantic cache: {ce}")
 
     # 2. Build parent swarm graph
-    agent = await build_swarm_orchestrator(org=org, provider=provider)
+    agent = await build_swarm_orchestrator(org=org, provider=provider, dir_path=dir_path)
 
     # 3. Log pre-execution parameters
     execution_id = None
@@ -295,18 +361,44 @@ async def run_swarm(
         }
     }
 
-    state_input = {
-        "messages": [
-            {
-                "role": "user",
-                "content": message,
-            }
-        ],
-        "active_agent": "architect"
-    }
+    if resume:
+        from langgraph.types import Command
+        state_input = Command(resume=message)
+    else:
+        # Default input. Do NOT override active_agent so it preserves checkpointer value
+        state_input = {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": message,
+                }
+            ]
+        }
 
     try:
         response = await agent.ainvoke(state_input, config=config)
+        
+        # Check if the execution has paused due to a handoff checkpoint interrupt
+        try:
+            state_info = await agent.aget_state(config)
+            if state_info.tasks and any(task.interrupts for task in state_info.tasks):
+                logger.info("Swarm execution paused at handoff checkpoint. Publishing handoff_interrupted event.")
+                interrupted_event = {
+                    "event_id": str(uuid.uuid4()),
+                    "run_id": active_run_id,
+                    "session_id": user_id,
+                    "event_type": "handoff_interrupted",
+                    "source_agent": "swarm",
+                    "target_agent": state_info.values.get("active_agent") if state_info.values else None,
+                    "tool_name": None,
+                    "payload": {
+                        "prompt_message": "Please enter your query for the active agent:"
+                    },
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
+                await kafka_client.publish("synchropia-agent-responses", interrupted_event)
+        except Exception as se:
+            logger.warning(f"Failed to check thread state for interrupts: {se}")
         final_text = ""
         if isinstance(response, dict) and "messages" in response:
             last_msg = response["messages"][-1]

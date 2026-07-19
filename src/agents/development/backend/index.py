@@ -18,6 +18,8 @@ from src.services.kafka_service import KafkaAgentCallbackHandler, kafka_client
 from src.services.database import get_db_session
 from src.models.db_models import Organization, Session as DBSession, OrchestrationRun, AgentExecution, MessageLog, Artifact
 from datetime import datetime, timezone
+from src.utils.code_scanner import get_dir_code_contents
+from deepagents.middleware._tool_exclusion import _ToolExclusionMiddleware
 
 from langgraph.checkpoint.memory import MemorySaver
 memory_checkpointer = MemorySaver()
@@ -29,6 +31,7 @@ async def build_backend_agent(
     harness: BackendAgentHarness,
     provider: str = "selfhosted",
     org: str = "",
+    dir_path: str | None = None,
     **llm_kwargs
 ) -> Any:
     """
@@ -47,7 +50,55 @@ async def build_backend_agent(
         llm = unified_llm_gateway.get_chat_model(provider_id="selfhosted", model_id="gemma_4", **llm_kwargs)
 
     # Base prompt mapping
-    base_prompt = BACKEND_WORKER_SYSTEM_PROMPT.format(org=org) if org else BACKEND_WORKER_SYSTEM_PROMPT
+    path_val = str(getattr(harness.backend, "root_dir", ""))
+    base_prompt = BACKEND_WORKER_SYSTEM_PROMPT.format(org=org, path=path_val)
+    base_prompt += """
+
+### AVAILABLE SYSTEM AND FILESYSTEM TOOLS
+- transfer_to_architect: Transfer control to the Architect Agent.
+- transfer_to_pm: Transfer control to the PM Agent.
+- transfer_to_devops: Transfer control to the DevOps Agent.
+- transfer_to_qa: Transfer control to the QA Agent.
+- transfer_to_frontend: Transfer control to the Frontend Agent.
+- transfer_to_backend: Transfer control to the Backend Agent.
+- transfer_to_data_engineer: Transfer control to the Data Engineer Agent.
+- transfer_to_data_scientist: Transfer control to the Data Scientist Agent.
+- transfer_to_mlops: Transfer control to the MLOps Agent.
+- transfer_to_ai: Transfer control to the AI Agent.
+- inspect_a_file(path: str): Reads and returns the content of a file.
+- execute_python_code(path: str): Executes a Python file and returns output/errors.
+- write_code_to_file(path: str, code: str): Writes code to a file, creating directories if needed.
+- refactoring_code(refactored_code: str, error_file_path: str): Overwrites a file with refactored code.
+- extract_content_within_a_file(path: str): Extracts and returns the content of a file.
+- navigate_entire_codebase_given_path(path: str): Lists all files and directories recursively from a path.
+- run_uvicorn_and_capture_logs(...): Runs a FastAPI app with Uvicorn and captures logs.
+- look_for_directory(path: str): Lists all directories in a given path.
+- run_node_js_server(cmd: str, cwd: str, max_lines: int): Runs a Node.js server command and captures logs.
+- current_directory(): Returns the current working directory.
+- change_directory(path: str): Changes the current working directory.
+- error_detection(error: str, path: str): Logs and returns error information for a file.
+- generate_project_structure(framework: str, use_case: str): Generates a project folder structure.
+- generate_architecture_plan(framework: str, use_case: str, tree_structure: str): Generates an architecture plan.
+- generate_folder_creation_script(tree_structure: str): Generates a Python script to create a folder structure.
+- generate_file_content(...): Generates code for a specific file based on project context.
+- explain_code(path: str): Explains what a code file does.
+- run_shell_commands(command: str, cwd: str, timeout: int): Runs a shell command and returns logs. But this is not secure 
+- run_shell_command_in_sandbox(command: str, cwd: str = "/", timeout: int = 60): Executes shell commands like `ls`, `mkdir`, `pip`, and `ruff` and can even execute any shell commands in a sandboxed environment.
+- agent_refactor_code(path: str): Refactors and fixes errors in a Python file.
+- create_project_structure_at_path(tree_structure: str, sub_root_dir: str): Creates a project structure at a path.
+- look_for_file_or_directory(name: str, root_path: str): Searches for a file or directory by name.
+- create_or_delete_file(path: str): Creates or deletes a file at the given path.
+- scaffold_and_generate_files(framework: str, use_case: str, project_root: str): Scaffolds a project and generates files.
+"""
+
+    is_local_sandbox = (
+        harness.backend is not None
+        and harness.backend.__class__.__name__ == "LocalPowerShellBackend"
+    )
+    if is_local_sandbox and dir_path:
+        code_context = get_dir_code_contents(dir_path)
+        if code_context:
+            base_prompt += f"\n\n### LOCAL SANDBOX CODEBASE CONTEXT\nBelow is the content of the files in the directory '{dir_path}' which you can modify or use for reference:\n\n{code_context}\n"
 
     agent = create_deep_agent(
         system_prompt=base_prompt,
@@ -55,6 +106,11 @@ async def build_backend_agent(
         tools=harness.tools,
         model=llm,
         checkpointer=memory_checkpointer,
+        middleware=[
+            _ToolExclusionMiddleware(
+                excluded=frozenset(["ls", "read_file", "write_file", "edit_file", "glob", "grep"])
+            )
+        ]
     )
     return agent
 
