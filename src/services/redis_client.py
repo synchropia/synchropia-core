@@ -13,6 +13,14 @@ class RedisAPIClient:
     
     Provides both synchronous and asynchronous operations using persistent
     connection pooling to optimize TCP handshake overhead.
+
+    Exposes three client types:
+      - sync_client:   Standard sync client with decode_responses=True (UTF-8 strings)
+      - async_client:  Async client with decode_responses=True (UTF-8 strings)
+      - binary_client: Sync client with decode_responses=False (raw bytes) — required
+                       for writing float32 embedding blobs to Redis Hash fields
+                       used by the HNSW vector index. decode_responses=True would
+                       silently corrupt binary data by attempting invalid UTF-8 decoding.
     """
 
     def __init__(
@@ -30,7 +38,7 @@ class RedisAPIClient:
 
         logger.info(f"Initializing Redis connection pool to {self.host}:{self.port} (DB {self.db})")
 
-        # Synchronous Connection Pool & Client
+        # ── Synchronous Connection Pool & Client (decode_responses=True) ──────
         self.sync_pool = redis.ConnectionPool(
             host=self.host,
             port=self.port,
@@ -41,7 +49,7 @@ class RedisAPIClient:
         )
         self.sync_client = redis.Redis(connection_pool=self.sync_pool)
 
-        # Asynchronous Connection Pool & Client
+        # ── Asynchronous Connection Pool & Client (decode_responses=True) ─────
         self.async_pool = async_redis.ConnectionPool(
             host=self.host,
             port=self.port,
@@ -51,13 +59,32 @@ class RedisAPIClient:
             socket_timeout=5.0
         )
         self.async_client = async_redis.Redis(connection_pool=self.async_pool)
-        
-        logger.success("Redis connection pools (sync & async) initialized successfully.")
+
+        # ── Binary Connection Pool & Client (decode_responses=False) ──────────
+        # Used exclusively by SemanticCache for writing HNSW vector index entries.
+        # Float32 embedding blobs are NOT valid UTF-8 — using the standard
+        # decode_responses=True client would raise UnicodeDecodeError or silently
+        # corrupt the data. This pool keeps bytes as bytes.
+        self.binary_pool = redis.ConnectionPool(
+            host=self.host,
+            port=self.port,
+            db=self.db,
+            password=self.password,
+            decode_responses=False,
+            socket_timeout=5.0
+        )
+        self.binary_client = redis.Redis(connection_pool=self.binary_pool)
+
+        logger.success("Redis connection pools (sync, async & binary) initialized successfully.")
 
     def __del__(self):
-        """Clean up synchronous connection pool on garbage collection."""
+        """Clean up all connection pools on garbage collection."""
         try:
             self.sync_pool.disconnect()
+        except Exception:
+            pass
+        try:
+            self.binary_pool.disconnect()
         except Exception:
             pass
 

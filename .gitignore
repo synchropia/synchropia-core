@@ -16,4 +16,5 @@ response
 .env*
 .db 
 test_*
- 
+
+*.md
