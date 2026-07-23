@@ -52,6 +52,7 @@ from src.services.kafka_service import (
 from src.services.mem0_handlers import MemoryLayer
 from src.services.redis_client import RedisAPIClient, redis_client
 from src.services.semantic_caching import SemanticCache, semantic_cache
+from src.services.credential_vault import CredentialVault, VaultConfig
 from src.services.slack_service import (
     SlackAPIClient,
     slack_client,
@@ -120,6 +121,9 @@ __all__ = [
     # Semantic Caching
     "SemanticCache",
     "semantic_cache",
+    # Vault
+    "CredentialVault",
+    "VaultConfig",
     # Slack
     "SlackAPIClient",
     "slack_client",
