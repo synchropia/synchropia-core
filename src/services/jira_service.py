@@ -18,6 +18,59 @@ from langchain_core.tools import BaseTool
 
 load_dotenv()
 
+# =====================================================================
+# Jira (Atlassian) OAuth 2.0 Scope Definitions
+# ---------------------------------------------------------------------
+# These are the Atlassian OAuth 2.0 (3LO) scopes for Jira Cloud API.
+# Used when authenticating via OAuth (replacing Basic auth with API token).
+# =====================================================================
+
+class JiraOAuthScope:
+    """Jira / Atlassian OAuth 2.0 (3LO) scope constants.
+
+    Ref: https://developer.atlassian.com/cloud/jira/platform/oauth-2-3lo-apps/
+    """
+    READ_JIRA_WORK     = "read:jira-work"
+    WRITE_JIRA_WORK    = "write:jira-work"
+    READ_JIRA_PROJECT  = "read:jira-project"
+    READ_JIRA_USER     = "read:jira-user"
+    OFFLINE_ACCESS     = "offline_access"
+
+
+JIRA_OAUTH_SCOPE_CATEGORIES: dict[str, dict[str, str]] = {
+    "Required": {
+        JiraOAuthScope.READ_JIRA_WORK:    "Read issues, comments, attachments, and workflows",
+        JiraOAuthScope.WRITE_JIRA_WORK:   "Create and update issues, add comments, transition status",
+        JiraOAuthScope.READ_JIRA_PROJECT: "Read project metadata, versions, components, and configuration",
+        JiraOAuthScope.READ_JIRA_USER:    "Read user profiles and group membership",
+        JiraOAuthScope.OFFLINE_ACCESS:    "Refresh tokens without user interaction (required for long-lived access)",
+    },
+}
+
+
+JIRA_TOOL_SCOPES: dict[str, list[str]] = {
+    "jira_get_myself":           [JiraOAuthScope.READ_JIRA_USER],
+    "jira_search_issues":        [JiraOAuthScope.READ_JIRA_WORK],
+    "jira_get_issue":            [JiraOAuthScope.READ_JIRA_WORK],
+    "jira_create_issue":         [JiraOAuthScope.WRITE_JIRA_WORK, JiraOAuthScope.READ_JIRA_PROJECT],
+    "jira_add_comment":          [JiraOAuthScope.WRITE_JIRA_WORK],
+    "jira_transition_issue":     [JiraOAuthScope.WRITE_JIRA_WORK],
+}
+
+
+def describe_jira_oauth_scopes() -> str:
+    lines = ["Jira (Atlassian) OAuth 2.0 — Required Scopes", "=" * 55]
+    for category, scopes in JIRA_OAUTH_SCOPE_CATEGORIES.items():
+        lines.append(f"\n{category}:")
+        for scope, desc in scopes.items():
+            lines.append(f"  ✅ {scope:30s} {desc}")
+    return "\n".join(lines)
+
+
+def scopes_for_jira_tool(tool_name: str) -> list[str]:
+    return JIRA_TOOL_SCOPES.get(tool_name, [])
+
+
 class ToolInputSchema(BaseModel):
     """Define your input schema in subclasses via args_schema override."""
 
@@ -49,60 +102,96 @@ class JiraAPIClient:
     
     Provides both synchronous and asynchronous methods for making requests to Jira,
     utilizing persistent HTTPX clients for TCP connection pooling.
+    
+    Supports two authentication modes and two URL modes:
+
+    Auth modes:
+    1. Basic Auth (email + api_token) — for API token legacy access
+    2. Bearer Token (oauth_token) — for OAuth 2.0 (3LO) access
+
+    URL modes:
+    A. Direct (jira_url) — e.g. https://your-domain.atlassian.net
+    B. Cloud proxy (cloud_id) — https://api.atlassian.com/ex/jira/{cloudId}/rest/api/3
     """
 
-    def __init__(self, jira_url: Optional[str] = None, email: Optional[str] = None, api_token: Optional[str] = None):
-        self.jira_url = jira_url or settings.JIRA_URL
+    def __init__(
+        self,
+        jira_url: Optional[str] = None,
+        email: Optional[str] = None,
+        api_token: Optional[str] = None,
+        oauth_token: Optional[str] = None,
+        cloud_id: Optional[str] = None,
+    ):
+        self.cloud_id = cloud_id
         self.email = email or settings.JIRA_EMAIL
         self.api_token = api_token or settings.JIRA_API_TOKEN
+        self.oauth_token = oauth_token
 
-        if self.jira_url:
-            self.jira_url = self.jira_url.strip('"\' ').rstrip("/")
+        # Determine base URL
+        if cloud_id:
+            self.base_url = f"https://api.atlassian.com/ex/jira/{cloud_id}"
+        else:
+            raw_url = jira_url or settings.JIRA_URL
+            self.base_url = raw_url.strip('"\' ').rstrip("/") if raw_url else ""
+
         if self.email:
             self.email = self.email.strip('"\' ')
         if self.api_token:
             self.api_token = self.api_token.strip('"\' ')
 
-        if not self.jira_url or not self.email or not self.api_token:
-            raise ValueError("Jira URL, email, and API token must be configured in environment or passed directly.")
+        if not self.base_url:
+            raise ValueError("Either jira_url or cloud_id must be provided.")
 
-        # Encode credentials for basic auth
-        auth_str = f"{self.email}:{self.api_token}"
-        auth_b64 = base64.b64encode(auth_str.encode("utf-8")).decode("utf-8")
+        if self.oauth_token:
+            self.headers = {
+                "Authorization": f"Bearer {self.oauth_token}",
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            }
+            logger.info("Jira API client using OAuth 2.0 Bearer token auth.")
+        elif self.email and self.api_token:
+            auth_str = f"{self.email}:{self.api_token}"
+            auth_b64 = base64.b64encode(auth_str.encode("utf-8")).decode("utf-8")
+            self.headers = {
+                "Authorization": f"Basic {auth_b64}",
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            }
+            logger.info("Jira API client using Basic auth (email + API token).")
+        else:
+            raise ValueError(
+                "Either (email + api_token) or oauth_token must be provided."
+            )
         
-        self.headers = {
-            "Authorization": f"Basic {auth_b64}",
-            "Accept": "application/json",
-            "Content-Type": "application/json"
-        }
-        
-        # Persistent clients for TCP Keep-Alive
         self.sync_client = httpx.Client(headers=self.headers, timeout=30.0)
         self.async_client = httpx.AsyncClient(headers=self.headers, timeout=30.0)
-        logger.success("Jira API client initialized successfully with persistent TCP connection pools.")
+        logger.success(f"Jira API client initialized (base: {self.base_url}).")
 
     def __del__(self):
-        # Close connection pools when garbage collected
         try:
             self.sync_client.close()
         except Exception:
             pass
 
+    def _build_url(self, path: str) -> str:
+        """Build full URL from a path like /rest/api/3/myself or /myself."""
+        path = path.lstrip("/")
+        if path.startswith("rest/"):
+            return f"{self.base_url}/{path}"
+        if self.cloud_id:
+            return f"{self.base_url}/rest/api/3/{path}"
+        return f"{self.base_url}/rest/api/3/{path}"
+
     def make_request(
         self, method: str, path: str, data: Optional[Dict[str, Any]] = None, params: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        url = f"{self.jira_url}/{path.lstrip('/')}"
-        logger.info(f"Making Jira {method} request to: {url} (reusing connection pool)")
+        url = self._build_url(path)
+        logger.info(f"Making Jira {method} request to: {url}")
         try:
             if method.upper() in ["POST", "PUT", "PATCH"]:
-                response = self.sync_client.request(
-                    method, url, json=data, params=params
-                )
+                response = self.sync_client.request(method, url, json=data, params=params)
             else:
-                response = self.sync_client.request(
-                    method, url, params=params
-                )
-            logger.info(f"Jira response status code: {response.status_code}")
+                response = self.sync_client.request(method, url, params=params)
             response.raise_for_status()
             try:
                 return response.json()
@@ -124,18 +213,13 @@ class JiraAPIClient:
     async def make_async_request(
         self, method: str, path: str, data: Optional[Dict[str, Any]] = None, params: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        url = f"{self.jira_url}/{path.lstrip('/')}"
-        logger.info(f"Making async Jira {method} request to: {url} (reusing connection pool)")
+        url = self._build_url(path)
+        logger.info(f"Making async Jira {method} request to: {url}")
         try:
             if method.upper() in ["POST", "PUT", "PATCH"]:
-                response = await self.async_client.request(
-                    method, url, json=data, params=params
-                )
+                response = await self.async_client.request(method, url, json=data, params=params)
             else:
-                response = await self.async_client.request(
-                    method, url, params=params
-                )
-            logger.info(f"Async Jira response status code: {response.status_code}")
+                response = await self.async_client.request(method, url, params=params)
             response.raise_for_status()
             try:
                 return response.json()
@@ -205,11 +289,11 @@ class JiraGetMyselfTool(AbstractTool):
     jira_client: JiraAPIClient
 
     def _run(self, run_manager: Optional[CallbackManagerForToolRun] = None) -> str:
-        res = self.jira_client.make_request("GET", "/rest/api/2/myself")
+        res = self.jira_client.make_request("GET", "/rest/api/3/myself")
         return json.dumps(res)
 
     async def _arun(self, run_manager: Optional[AsyncCallbackManagerForToolRun] = None) -> str:
-        res = await self.jira_client.make_async_request("GET", "/rest/api/2/myself")
+        res = await self.jira_client.make_async_request("GET", "/rest/api/3/myself")
         return json.dumps(res)
 
 
@@ -506,6 +590,11 @@ class JiraTransitionIssueTool(AbstractTool):
 
 __all__ = [
     "JiraAPIClient",
+    "JiraOAuthScope",
+    "JIRA_OAUTH_SCOPE_CATEGORIES",
+    "JIRA_TOOL_SCOPES",
+    "describe_jira_oauth_scopes",
+    "scopes_for_jira_tool",
     "JiraGetMyselfTool",
     "JiraCreateIssueTool",
     "JiraSearchIssuesTool",

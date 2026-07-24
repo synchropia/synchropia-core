@@ -18,6 +18,16 @@ class Settings(BaseSettings):
     GITHUB_APP_PRIVATE_KEY_PATH: str
     GITHUB_INSTALLATION_ID: str
 
+    GITHUB_CLIENT_ID:str
+    GITHUB_CLIENT_SECRET:str 
+
+    GOOGLE_CLIENT_ID:str
+    GOOGLE_CLIENT_SECRET:str
+
+    INFISICAL_TOKEN:str 
+    INFISICAL_PROJECT_ID:str
+    
+
     # SonarQube credentials
     SONARQUBE_API_KEY: str
     SONARQUBE_BASE_URL: str = "https://sonarcloud.io"
@@ -26,9 +36,17 @@ class Settings(BaseSettings):
     JIRA_API_TOKEN: str
     JIRA_URL: str
     JIRA_EMAIL: str
-
+    JIRA_OAUTH_CLIENT_ID:str
+    JIRA_OAUTH_CLIENT_SECRET:str
+    
     # Slack Integration Credentials
     SLACK_BOT_TOKEN: str
+
+    # Okta Integration Credentials
+    OKTA_CLIENT_ID:str
+    OKTA_CLIENT_SECRET:str
+    OKTA_ISSUER:str
+    NEXT_PUBLIC_APP_URL:str 
 
     # PostgreSQL Configuration
     POSTGRES_HOST: str
