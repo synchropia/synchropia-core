@@ -8,7 +8,7 @@ bootstrap_env_from_vault()
 class Settings(BaseSettings):
     model_config: SettingsConfigDict = SettingsConfigDict(
         env_prefix="",
-        env_file=dotenv_path,
+        env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
     )
