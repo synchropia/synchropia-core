@@ -43,6 +43,12 @@ memory_checkpointer = MemorySaver()
 class SwarmState(TypedDict):
     messages: Annotated[List[BaseMessage], add_messages]
     active_agent: NotRequired[str]
+    # ── SonarQube quality gate tracking ──────────────────────────────────
+    quality_gate_status: NotRequired[str]   # "OK" | "ERROR" | "WARN" | "NONE" | "UNKNOWN"
+    quality_gate_retries: NotRequired[int]  # count of QA→Backend→QA remediation cycles
+
+
+_MAX_QA_RETRIES = 3  # maximum QA→Backend→QA feedback cycles before escalating to architect
 
 
 async def build_swarm_orchestrator(
@@ -97,6 +103,29 @@ async def build_swarm_orchestrator(
         return res
 
     async def call_qa(state: SwarmState, config: RunnableConfig):
+        # Enforce retry cap to prevent infinite QA ↔ Backend loop
+        retries = state.get("quality_gate_retries", 0)
+        if retries >= _MAX_QA_RETRIES:
+            logger.warning(
+                f"Quality gate remediation loop hit retry limit ({retries}/{_MAX_QA_RETRIES}). "
+                "Escalating to architect."
+            )
+            return {
+                "active_agent": "architect",
+                "messages": [
+                    AIMessage(
+                        content=(
+                            f"⚠️ Quality Gate Remediation Limit Reached\n\n"
+                            f"The QA→Backend fix cycle has run {retries} times without achieving "
+                            f"a passing Quality Gate. Manual intervention is required.\n"
+                            f"Last gate status: {state.get('quality_gate_status', 'UNKNOWN')}\n\n"
+                            f"Please review the SonarQube dashboard and CodeQualityReport "
+                            f"records for this run and decide on next steps."
+                        )
+                    )
+                ],
+            }
+
         res = await qa_agent.ainvoke(state, _with_agent_metadata(config, "qa"))
         if isinstance(res, dict):
             res["active_agent"] = "qa"
@@ -112,6 +141,14 @@ async def build_swarm_orchestrator(
         res = await backend_agent.ainvoke(state, _with_agent_metadata(config, "backend"))
         if isinstance(res, dict):
             res["active_agent"] = "backend"
+            # If backend was invoked as part of a QA quality-gate remediation cycle,
+            # increment the retry counter so QA knows how many cycles have occurred.
+            if state.get("quality_gate_status") in ("ERROR", "WARN"):
+                res["quality_gate_retries"] = state.get("quality_gate_retries", 0) + 1
+                logger.info(
+                    f"QA remediation cycle {res['quality_gate_retries']}/{_MAX_QA_RETRIES} "
+                    f"— backend finished, control returning via handoff."
+                )
         return res
 
     async def call_data_engineer(state: SwarmState, config: RunnableConfig):

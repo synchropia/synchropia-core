@@ -8,7 +8,7 @@ bootstrap_env_from_vault()
 class Settings(BaseSettings):
     model_config: SettingsConfigDict = SettingsConfigDict(
         env_prefix="",
-        env_file=".env",
+        env_file=dotenv_path,
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -73,7 +73,7 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
 
     # Semantic Caching Configuration
-    SEMANTIC_CACHE_THRESHOLD: float = 0.95
+    SEMANTIC_CACHE_THRESHOLD: float = 0.90
     SEMANTIC_CACHE_TTL: int = 86400  # Default 24 hours
     COHERE_EMBED_DIMENSION: int = 1024  # embed-english-v3.0 output dimension (used by HNSW index schema)
 
