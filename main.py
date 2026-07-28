@@ -16,7 +16,7 @@ from src.services.redis_client import redis_client
 from src.services.kafka_service import kafka_client
 from src.core.llm_gateway import unified_llm_gateway
 from src.services.sonarqube_testing_service import * 
-from src.routes.streaming_route import router as streaming_router
+from src.api.v1.streaming_route import router as streaming_router
 from src.utils.logger import logger 
 from src.utils.rate_limiter import rate_limiter
 

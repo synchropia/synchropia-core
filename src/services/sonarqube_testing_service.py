@@ -14,6 +14,10 @@ import httpx
 from dotenv import load_dotenv
 from loguru import logger
 from pydantic import BaseModel, Field
+import sys
+from pathlib import Path
+# Add project root to sys.path to support running directly or debugging
+sys.path.append(str(Path(__file__).resolve().parents[2]))
 
 from src.config.settings import settings
 from langchain_core.callbacks import (
@@ -690,7 +694,7 @@ __all__ = [
 
 if __name__ == "__main__":
     try:
-        client = SonarQubeAPIClient()
+        client = sonarqube_client
 
         # 1. Quality Gate status
         status_tool = SonarQubeGetProjectStatusTool(sonarqube_client=client)
@@ -707,5 +711,9 @@ if __name__ == "__main__":
         logger.info("Fetching open issues...")
         print(issues_tool.invoke({"project_key": "synchropia_synchropia-core"}))
 
+        metrics_hist_tool = SonarQubeGetMetricHistoryTool(sonarqube_client=client)
+        logger.info("Fetching metric history...")
+        print(metrics_hist_tool.invoke({"project_key": "synchropia_synchropia-core","metrics":"bugs,coverage", "page_size": 10}))
+            
     except Exception as e:
         print(f"Test run failed: {e}")
