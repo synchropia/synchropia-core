@@ -73,7 +73,7 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
 
     # Semantic Caching Configuration
-    SEMANTIC_CACHE_THRESHOLD: float = 0.95
+    SEMANTIC_CACHE_THRESHOLD: float = 0.90
     SEMANTIC_CACHE_TTL: int = 86400  # Default 24 hours
     COHERE_EMBED_DIMENSION: int = 1024  # embed-english-v3.0 output dimension (used by HNSW index schema)
 

@@ -12,6 +12,74 @@ from langchain.tools import ToolRuntime
 from langgraph.types import Command
 from src.utils.logger import logger
 import json
+from typing import Dict, Any, List, Optional
+
+
+# ---------------------------------------------------------------------------
+# Structured payload helper
+# ---------------------------------------------------------------------------
+
+def build_qa_remediation_payload(
+    project_key: str,
+    gate_status: str,
+    measures: Dict[str, Any],
+    critical_issues: List[Dict[str, Any]],
+    remediation_jira_keys: Optional[List[str]] = None,
+) -> str:
+    """
+    Format a structured JSON payload for QA → Backend handoffs triggered by
+    a failing SonarQube Quality Gate.
+
+    The Backend Agent receives this string as its ``instructions`` argument and
+    parses it to understand exactly which issues to fix.
+
+    Parameters
+    ----------
+    project_key : str
+        SonarCloud project key (e.g. ``'synchropia_synchropia-core'``).
+    gate_status : str
+        Raw SonarCloud gate status: ``'ERROR'``, ``'WARN'``, etc.
+    measures : dict
+        Flat dict of metric_key → value from ``sonarqube_get_project_measures``.
+    critical_issues : list[dict]
+        Each dict should have: type, severity, message, component, line, effort,
+        and optionally jira_key.
+    remediation_jira_keys : list[str], optional
+        Jira ticket keys created for this remediation cycle.
+
+    Returns
+    -------
+    str
+        JSON-serialised payload string to pass as ``instructions`` to
+        ``transfer_to_backend``.
+    """
+    payload = {
+        "type": "quality_gate_remediation",
+        "project_key": project_key,
+        "gate_status": gate_status,
+        "measures": {
+            k: measures.get(k)
+            for k in (
+                "bugs", "vulnerabilities", "code_smells", "coverage",
+                "duplicated_lines_density", "complexity", "cognitive_complexity",
+                "sqale_debt_ratio", "sqale_index", "violations",
+            )
+        },
+        "critical_issues": [
+            {
+                "jira_key": i.get("jira_key"),
+                "type": i.get("type"),
+                "severity": i.get("severity"),
+                "message": i.get("message"),
+                "component": i.get("component"),
+                "line": i.get("line"),
+                "effort": i.get("effort"),
+            }
+            for i in critical_issues[:15]  # cap at 15 to keep payload readable
+        ],
+        "remediation_jira_keys": remediation_jira_keys or [],
+    }
+    return json.dumps(payload, indent=2)
 
 def _create_transfer_command(agent_name: str, instructions: str, runtime: ToolRuntime) -> Command:
     """Helper to construct the handoff Command with custom instructions."""
@@ -93,12 +161,20 @@ def transfer_to_devops(instructions: str = "", runtime: ToolRuntime = None) -> C
 @tool
 def transfer_to_qa(instructions: str = "", runtime: ToolRuntime = None) -> Command:
     """Handoff the conversation to the Quality Assurance (QA) Agent.
-    
-    Use this tool to trigger test execution suites, review code coverage reports, run unit/integration 
-    validations, or verify that backend/frontend features meet functional requirements specifications.
-    
+
+    Use this tool to trigger test execution suites, review code coverage reports, run
+    unit/integration validations, or verify that backend/frontend features meet
+    functional requirements specifications.
+
+    **Backend → QA Return after Remediation**:
+    When the Backend Agent calls this after fixing SonarQube issues, the ``instructions``
+    argument should be a brief confirmation such as:
+    ``'{"type": "remediation_complete", "fixed_issues": ["ERP-42", "ERP-43"], "summary": "Fixed SQL injection and removed dead code"}'
+
     Args:
-        instructions: Directives explaining which files to validate, which test suites to execute, or requirements metrics to verify.
+        instructions: Directives explaining which files to validate, which test suites
+            to execute, requirements metrics to verify — OR a remediation completion
+            confirmation from the Backend Agent.
     """
     return _create_transfer_command("qa", instructions, runtime)
 
@@ -117,12 +193,21 @@ def transfer_to_frontend(instructions: str = "", runtime: ToolRuntime = None) ->
 @tool
 def transfer_to_backend(instructions: str = "", runtime: ToolRuntime = None) -> Command:
     """Handoff the conversation to the Backend specialist Agent.
-    
-    Use this tool when you need to write API endpoints, implement data validation logic, 
+
+    Use this tool when you need to write API endpoints, implement data validation logic,
     construct SQL query scripts, update routing controllers, or create database models.
-    
+
+    **Quality Gate Remediation (QA → Backend)**:
+    When the QA Agent calls this after a SonarQube Quality Gate failure, the
+    ``instructions`` argument MUST be a JSON string matching the schema:
+    ``{type, project_key, gate_status, measures, critical_issues, remediation_jira_keys}``
+    Use ``build_qa_remediation_payload(...)`` from ``src.agents.utils.handoffs`` to
+    generate this payload correctly.
+
     Args:
-        instructions: API specifications, payload criteria, database column constraints, or controller logic details to implement.
+        instructions: API specifications, payload criteria, database column constraints,
+            controller logic details to implement — OR a JSON quality-gate remediation
+            payload (see above).
     """
     return _create_transfer_command("backend", instructions, runtime)
 
@@ -186,4 +271,20 @@ HANDOFF_TOOLS = [
     transfer_to_data_scientist,
     transfer_to_mlops,
     transfer_to_ai,
+]
+
+__all__ = [
+    "HANDOFF_TOOLS",
+    "build_qa_remediation_payload",
+    # individual handoff tools (exported for direct use)
+    "transfer_to_architect",
+    "transfer_to_pm",
+    "transfer_to_devops",
+    "transfer_to_qa",
+    "transfer_to_frontend",
+    "transfer_to_backend",
+    "transfer_to_data_engineer",
+    "transfer_to_data_scientist",
+    "transfer_to_mlops",
+    "transfer_to_ai",
 ]
