@@ -16,11 +16,16 @@ from src.services import (
     JiraTransitionIssueTool,
     slack_client,
     SendMessageTool,
+    SonarQubeAPIClient,
+    SonarQubeGetProjectStatusTool,
+    SonarQubeListGithubReposTool,
+    SonarQubeGetProjectIssuesTool,
+    SonarQubeGetProjectMeasuresTool,
 )
 
 class QAAgentHarness(BaseAgentHarness):
     """
-    Initializes the QA Agent execution sandbox and registers workflow auditing and Jira commenting tools.
+    Initializes the QA Agent execution sandbox and registers workflow auditing, Jira commenting, and SonarQube tools.
     """
 
     def __init__(self, sandbox_name: str = "qa-sandbox"):
@@ -30,6 +35,7 @@ class QAAgentHarness(BaseAgentHarness):
         gh_client = self._try_init(GitHubAPIClient)
         jr_client = self._try_init(JiraAPIClient)
         sl_client = slack_client
+        sq_client = self._try_init(SonarQubeAPIClient)
 
         # 2. Register QA Tools
         if gh_client:
@@ -52,3 +58,12 @@ class QAAgentHarness(BaseAgentHarness):
                 SendMessageTool,
             ]
             self._register_tools(slack_tool_classes, slack_client=sl_client)
+
+        if sq_client:
+            sonarqube_tool_classes = [
+                SonarQubeGetProjectStatusTool,
+                SonarQubeListGithubReposTool,
+                SonarQubeGetProjectIssuesTool,
+                SonarQubeGetProjectMeasuresTool,
+            ]
+            self._register_tools(sonarqube_tool_classes, sonarqube_client=sq_client)

@@ -36,8 +36,8 @@ class Settings(BaseSettings):
     JIRA_API_TOKEN: str
     JIRA_URL: str
     JIRA_EMAIL: str
-    JIRA_OAUTH_CLIENT_ID:str
-    JIRA_OAUTH_CLIENT_SECRET:str
+    JIRA_CLIENT_ID:str
+    JIRA_CLIENT_SECRET:str
     
     # Slack Integration Credentials
     SLACK_BOT_TOKEN: str
@@ -46,7 +46,6 @@ class Settings(BaseSettings):
     OKTA_CLIENT_ID:str
     OKTA_CLIENT_SECRET:str
     OKTA_ISSUER:str
-    NEXT_PUBLIC_APP_URL:str 
 
     # PostgreSQL Configuration
     POSTGRES_HOST: str

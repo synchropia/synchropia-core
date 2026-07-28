@@ -42,7 +42,11 @@ class AbstractTool(BaseTool, ABC):
 
 
 class SonarQubeAPIClient:
-    """A comprehensive client for interacting with the SonarQube / SonarCloud REST API."""
+    """A comprehensive client for interacting with the SonarQube / SonarCloud REST API.
+    
+    Uses basic authentication where the username is the User Token and the password 
+    remains empty, managed through persistent connection pools.
+    """
 
     def __init__(self, url: Optional[str] = None, token: Optional[str] = None):
         self.url = url or settings.SONARQUBE_BASE_URL
@@ -127,6 +131,21 @@ class ListGithubReposInput(ToolInputSchema):
     alm_setting: str = Field(default="github", description="The DevOps platform setting key.")
 
 
+class GetProjectIssuesInput(ToolInputSchema):
+    project_key: str = Field(description="The unique key of the SonarQube project (e.g., 'org_project-name').")
+    severities: Optional[str] = Field(default=None, description="Comma-separated list of severities (e.g., 'BLOCKER,CRITICAL,MAJOR').")
+    types: Optional[str] = Field(default=None, description="Comma-separated list of issue types (e.g., 'BUG,VULNERABILITY,CODE_SMELL').")
+    resolved: Optional[bool] = Field(default=None, description="If false, only retrieves active/unresolved issues. If true, only retrieves resolved issues.")
+
+
+class GetProjectMeasuresInput(ToolInputSchema):
+    project_key: str = Field(description="The unique key of the SonarQube project (e.g., 'org_project-name').")
+    metric_keys: str = Field(
+        default="bugs,vulnerabilities,code_smells,coverage,duplicated_lines_density",
+        description="Comma-separated list of metric keys to retrieve."
+    )
+
+
 # --- Tool Definitions ---
 
 class SonarQubeGetProjectStatusTool(AbstractTool):
@@ -183,11 +202,88 @@ class SonarQubeListGithubReposTool(AbstractTool):
         return json.dumps(res)
 
 
+class SonarQubeGetProjectIssuesTool(AbstractTool):
+    """Retrieves code issues for a target project using its unique project key."""
+    name: str = "sonarqube_get_project_issues"
+    description: str = "Retrieves a list of code issues (bugs, vulnerabilities, code smells) for a target project using its unique project key."
+    args_schema: Type[BaseModel] = GetProjectIssuesInput
+    sonarqube_client: SonarQubeAPIClient
+
+    def _run(
+        self,
+        project_key: str,
+        severities: Optional[str] = None,
+        types: Optional[str] = None,
+        resolved: Optional[bool] = None,
+        run_manager: Optional[CallbackManagerForToolRun] = None,
+    ) -> str:
+        params = {"componentKeys": project_key}
+        if severities:
+            params["severities"] = severities
+        if types:
+            params["types"] = types
+        if resolved is not None:
+            params["resolved"] = "true" if resolved else "false"
+        
+        res = self.sonarqube_client.make_request("GET", "api/issues/search", params=params)
+        return json.dumps(res)
+
+    async def _arun(
+        self,
+        project_key: str,
+        severities: Optional[str] = None,
+        types: Optional[str] = None,
+        resolved: Optional[bool] = None,
+        run_manager: Optional[AsyncCallbackManagerForToolRun] = None,
+    ) -> str:
+        params = {"componentKeys": project_key}
+        if severities:
+            params["severities"] = severities
+        if types:
+            params["types"] = types
+        if resolved is not None:
+            params["resolved"] = "true" if resolved else "false"
+        
+        res = await self.sonarqube_client.make_async_request("GET", "api/issues/search", params=params)
+        return json.dumps(res)
+
+
+class SonarQubeGetProjectMeasuresTool(AbstractTool):
+    """Retrieves code measures (metrics) for a target project using its unique project key."""
+    name: str = "sonarqube_get_project_measures"
+    description: str = "Retrieves code metrics (coverage, bugs, vulnerabilities, code smells, duplication) for a target project using its unique project key."
+    args_schema: Type[BaseModel] = GetProjectMeasuresInput
+    sonarqube_client: SonarQubeAPIClient
+
+    def _run(
+        self,
+        project_key: str,
+        metric_keys: str = "bugs,vulnerabilities,code_smells,coverage,duplicated_lines_density",
+        run_manager: Optional[CallbackManagerForToolRun] = None,
+    ) -> str:
+        params = {"component": project_key, "metricKeys": metric_keys}
+        res = self.sonarqube_client.make_request("GET", "api/measures/component", params=params)
+        return json.dumps(res)
+
+    async def _arun(
+        self,
+        project_key: str,
+        metric_keys: str = "bugs,vulnerabilities,code_smells,coverage,duplicated_lines_density",
+        run_manager: Optional[AsyncCallbackManagerForToolRun] = None,
+    ) -> str:
+        params = {"component": project_key, "metricKeys": metric_keys}
+        res = await self.sonarqube_client.make_async_request("GET", "api/measures/component", params=params)
+        return json.dumps(res)
+
+
 sonarqube_client = SonarQubeAPIClient()
 
 __all__ = [
     "sonarqube_client",
-    "SonarQubeGetProjectStatusTool"
+    "SonarQubeGetProjectStatusTool",
+    "SonarQubeListGithubReposTool",
+    "SonarQubeGetProjectIssuesTool",
+    "SonarQubeGetProjectMeasuresTool",
 ]
 
 if __name__ == "__main__":
@@ -196,12 +292,13 @@ if __name__ == "__main__":
         client = SonarQubeAPIClient()
         
         # 1. Instantiate the tool
-        tool = SonarQubeGetProjectStatusTool(sonarqube_client=client)
+        tool = SonarQubeListGithubReposTool(sonarqube_client=client)
         
         # 2. Run the tool with correct arguments for your active workspace
         logger.info("Executing list GitHub repositories tool...")
         result = tool.invoke({
-            "project_key": "synchropia_synchropia-core",
+            "organization": "synchropia",
+            "alm_setting": "github"
         })
         
         print("\nTool Output Result:\n", json.dumps(json.loads(result), indent=2))

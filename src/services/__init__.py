@@ -64,8 +64,23 @@ from src.services.slack_service import (
     FindUserByEmailTool,
     FetchLatestMessageTool,
 )
+from src.services.sonarqube_testing_service import (
+    SonarQubeAPIClient,
+    sonarqube_client,
+    SonarQubeGetProjectStatusTool,
+    SonarQubeListGithubReposTool,
+    SonarQubeGetProjectIssuesTool,
+    SonarQubeGetProjectMeasuresTool,
+)
 
 __all__ = [
+    # SonarQube
+    "SonarQubeAPIClient",
+    "sonarqube_client",
+    "SonarQubeGetProjectStatusTool",
+    "SonarQubeListGithubReposTool",
+    "SonarQubeGetProjectIssuesTool",
+    "SonarQubeGetProjectMeasuresTool",
     # GitHub
     "GitHubAPIClient",
     "ListRepositoriesTool",
