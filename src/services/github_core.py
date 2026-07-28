@@ -22,6 +22,118 @@ from langchain_core.tools.base import ArgsSchema
 
 from src.utils.logger import logger 
 
+# =====================================================================
+# GitHub App Permission Scope Definitions
+# ---------------------------------------------------------------------
+# These are the official GitHub App permissions organized by category.
+# GitHub Apps use granular permissions (not OAuth scopes). Each
+# permission is a distinct access right granted to the GitHub App
+# installation. The system pre-selects these when creating/requesting
+# a GitHub App installation.
+# =====================================================================
+
+class GitHubAppPermission:
+    """GitHub App permission constants.
+
+    Ref: https://docs.github.com/en/rest/overview/permissions-required-for-github-apps
+    """
+
+    # ── Read + Write Permissions ────────────────────────────────────
+    ACTIONS                                    = "actions"
+    CHECKS                                     = "checks"
+    CODE_QUALITY                               = "code_quality"
+    COMMIT_STATUSES                            = "commit_statuses"
+    CONTENTS                                   = "contents"
+    DEPLOYMENTS                                = "deployments"
+    ISSUES                                     = "issues"
+    MERGE_QUEUES                               = "merge_queues"
+    PULL_REQUESTS                              = "pull_requests"
+    SECRET_SCANNING_ALERT_DISMISSAL_REQUESTS   = "secret_scanning_alert_dismissal_requests"
+    SECRET_SCANNING_ALERTS                     = "secret_scanning_alerts"
+    SECRET_SCANNING_PUSH_PROTECTION_BYPASS_REQUESTS = "secret_scanning_push_protection_bypass_requests"
+    SECRETS                                    = "secrets"
+    VARIABLES                                  = "variables"
+    WEBHOOKS                                   = "webhooks"
+    WORKFLOWS                                  = "workflows"
+
+    # ── Read-Only Permissions (mandatory) ──────────────────────────
+    METADATA                                   = "metadata"
+
+
+# ── Permission Category Registry ──────────────────────────────────
+
+GITHUB_APP_PERMISSION_CATEGORIES: dict[str, dict[str, str]] = {
+    "Read and Write Access": {
+        "Actions": "read_and_write",
+        "Checks": "read_and_write",
+        "Code quality": "read_and_write",
+        "Commit statuses": "read_and_write",
+        "Contents": "read_and_write",
+        "Deployments": "read_and_write",
+        "Issues": "read_and_write",
+        "Merge queues": "read_and_write",
+        "Pull requests": "read_and_write",
+        "Secret scanning alert dismissal requests": "read_and_write",
+        "Secret scanning alerts": "read_and_write",
+        "Secret scanning push protection bypass requests": "read_and_write",
+        "Secrets": "read_and_write",
+        "Variables": "read_and_write",
+        "Webhooks": "read_and_write",
+        "Workflows": "read_and_write",
+    },
+    "Read-Only Access (mandatory)": {
+        "Metadata": "read_only",
+    },
+}
+
+
+# ── Tool → Required Permission Mapping ────────────────────────────
+
+GITHUB_TOOL_PERMISSIONS: dict[str, list[str]] = {
+    "list_repositories":              [GitHubAppPermission.CONTENTS, GitHubAppPermission.METADATA],
+    "get_repository":                 [GitHubAppPermission.CONTENTS, GitHubAppPermission.METADATA],
+    "list_issues":                    [GitHubAppPermission.ISSUES, GitHubAppPermission.METADATA],
+    "create_issue":                   [GitHubAppPermission.ISSUES],
+    "update_issue":                   [GitHubAppPermission.ISSUES],
+    "list_pull_requests":             [GitHubAppPermission.PULL_REQUESTS, GitHubAppPermission.METADATA],
+    "create_pull_request":            [GitHubAppPermission.PULL_REQUESTS, GitHubAppPermission.CONTENTS],
+    "merge_pull_request":             [GitHubAppPermission.PULL_REQUESTS, GitHubAppPermission.CONTENTS],
+    "check_pr_status":                [GitHubAppPermission.PULL_REQUESTS],
+    "list_workflow_runs":             [GitHubAppPermission.ACTIONS, GitHubAppPermission.METADATA],
+    "trigger_workflow":               [GitHubAppPermission.ACTIONS, GitHubAppPermission.WORKFLOWS, GitHubAppPermission.CONTENTS],
+    "cancel_workflow_run":            [GitHubAppPermission.ACTIONS],
+    "list_commits":                   [GitHubAppPermission.CONTENTS, GitHubAppPermission.METADATA],
+    "compare_commits":                [GitHubAppPermission.CONTENTS],
+    "list_branches":                  [GitHubAppPermission.CONTENTS, GitHubAppPermission.METADATA],
+    "create_branch":                  [GitHubAppPermission.CONTENTS],
+    "list_deployments":               [GitHubAppPermission.DEPLOYMENTS, GitHubAppPermission.METADATA],
+    "create_deployment":              [GitHubAppPermission.DEPLOYMENTS, GitHubAppPermission.CONTENTS],
+    "get_file_content":               [GitHubAppPermission.CONTENTS],
+    "create_or_update_file":          [GitHubAppPermission.CONTENTS],
+    "list_webhooks":                  [GitHubAppPermission.WEBHOOKS, GitHubAppPermission.METADATA],
+    "create_webhook":                 [GitHubAppPermission.WEBHOOKS],
+    "search_repositories":            [GitHubAppPermission.METADATA],
+    "search_issues":                  [GitHubAppPermission.ISSUES, GitHubAppPermission.METADATA],
+    "request_reviewer":               [GitHubAppPermission.PULL_REQUESTS],
+    "get_tree":                       [GitHubAppPermission.CONTENTS],
+}
+
+
+def describe_github_app_permissions() -> str:
+    """Returns a human-readable summary of all GitHub App permissions."""
+    lines = ["GitHub App — Required Permissions", "=" * 50]
+    for category, resources in GITHUB_APP_PERMISSION_CATEGORIES.items():
+        lines.append(f"\n{category}:")
+        for resource, access in resources.items():
+            lines.append(f"  {resource}: {access}")
+    return "\n".join(lines)
+
+
+def permissions_for_tool(tool_name: str) -> list[str]:
+    """Return the list of GitHub App permissions required for a given tool."""
+    return GITHUB_TOOL_PERMISSIONS.get(tool_name, [])
+
+
 class ToolInputSchema(BaseModel):
     """Define your input schema in subclasses via args_schema override."""
 
@@ -2157,6 +2269,11 @@ class GetTreeTool(AbstractTool):
 
 __all__ = [
     "GitHubAPIClient",
+    "GitHubAppPermission",
+    "GITHUB_APP_PERMISSION_CATEGORIES",
+    "GITHUB_TOOL_PERMISSIONS",
+    "describe_github_app_permissions",
+    "permissions_for_tool",
     "ListRepositoriesTool",
     "GetRepositoryTool",
     "ListIssuesTool",

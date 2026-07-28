@@ -1,11 +1,13 @@
 from __future__ import annotations
 import os
+from dotenv import load_dotenv
 from dataclasses import dataclass
 from typing import Optional
 from loguru import logger
 
 import infisical_client as infisical
 
+load_dotenv()
 
 @dataclass
 class VaultConfig:
@@ -39,8 +41,6 @@ class CredentialVault:
     _instance: Optional["CredentialVault"] = None
 
     def __init__(self, config: Optional[VaultConfig] = None) -> None:
-      
-
         cfg = config or VaultConfig()
 
         token = cfg.access_token or os.getenv("INFISICAL_TOKEN")
@@ -86,11 +86,15 @@ class CredentialVault:
                 environment=self._env,
                 project_id=self._project_id,
                 path=path,
+                attach_to_process_env=False,
             )
             secrets = self._client.listSecrets(opts) or []
             return {s.secret_key: s.secret_value for s in secrets}
         except Exception as exc:
-            logger.error("Failed to list secrets at path={}: {}", path, exc)
+            logger.error(
+                "Failed to list secrets path={} env={} project={}: {}",
+                path, self._env, self._project_id, exc,
+            )
             return {}
 
     # ------------------------------------------------------------------

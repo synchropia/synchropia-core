@@ -18,6 +18,16 @@ class Settings(BaseSettings):
     GITHUB_APP_PRIVATE_KEY_PATH: str
     GITHUB_INSTALLATION_ID: str
 
+    GITHUB_CLIENT_ID:str
+    GITHUB_CLIENT_SECRET:str 
+
+    GOOGLE_CLIENT_ID:str
+    GOOGLE_CLIENT_SECRET:str
+
+    INFISICAL_TOKEN:str 
+    INFISICAL_PROJECT_ID:str
+    
+
     # SonarQube credentials
     SONARQUBE_API_KEY: str
     SONARQUBE_BASE_URL: str = "https://sonarcloud.io"
@@ -26,9 +36,16 @@ class Settings(BaseSettings):
     JIRA_API_TOKEN: str
     JIRA_URL: str
     JIRA_EMAIL: str
-
+    JIRA_CLIENT_ID:str
+    JIRA_CLIENT_SECRET:str
+    
     # Slack Integration Credentials
     SLACK_BOT_TOKEN: str
+
+    # Okta Integration Credentials
+    OKTA_CLIENT_ID:str
+    OKTA_CLIENT_SECRET:str
+    OKTA_ISSUER:str
 
     # PostgreSQL Configuration
     POSTGRES_HOST: str
@@ -56,7 +73,7 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
 
     # Semantic Caching Configuration
-    SEMANTIC_CACHE_THRESHOLD: float = 0.95
+    SEMANTIC_CACHE_THRESHOLD: float = 0.90
     SEMANTIC_CACHE_TTL: int = 86400  # Default 24 hours
     COHERE_EMBED_DIMENSION: int = 1024  # embed-english-v3.0 output dimension (used by HNSW index schema)
 

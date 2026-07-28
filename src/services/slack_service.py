@@ -27,6 +27,79 @@ from langchain_core.tools.base import ArgsSchema
 from src.utils.logger import logger 
 from src.config.settings import settings
 
+# =====================================================================
+# Slack Bot Token OAuth Scope Definitions
+# ---------------------------------------------------------------------
+# These are the official Slack Bot Token scopes. The system requests
+# these scopes when installing the bot app into a workspace.
+# =====================================================================
+
+class SlackBotScope:
+    """Slack Bot Token OAuth scope constants.
+
+    Ref: https://api.slack.com/scopes
+    """
+
+    CHANNELS_HISTORY    = "channels:history"
+    CHANNELS_MANAGE     = "channels:manage"
+    CHANNELS_READ       = "channels:read"
+    CHAT_WRITE          = "chat:write"
+    CHAT_WRITE_CUSTOMIZE = "chat:write.customize"
+    GROUPS_HISTORY      = "groups:history"
+    GROUPS_READ         = "groups:read"
+    GROUPS_WRITE        = "groups:write"
+    IM_READ             = "im:read"
+    MPIM_READ           = "mpim:read"
+    PINS_WRITE          = "pins:write"
+    USERS_READ          = "users:read"
+    USERS_READ_EMAIL    = "users:read.email"
+
+
+SLACK_BOT_SCOPE_CATEGORIES: dict[str, dict[str, str]] = {
+    "Required": {
+        "channels:history":    "View messages and other content in public channels that the bot has been added to",
+        "channels:manage":     "Manage public channels that the bot has been added to and create new ones",
+        "channels:read":       "View basic information about public channels in a workspace",
+        "chat:write":          "Send messages as @bot",
+        "chat:write.customize": "Send messages as @bot with a customized username and avatar",
+        "groups:history":      "View messages and other content in private channels that the bot has been added to",
+        "groups:read":         "View basic information about private channels that the bot has been added to",
+        "groups:write":        "Manage private channels that the bot has been added to and create new ones",
+        "im:read":             "View basic information about direct messages that the bot has been added to",
+        "mpim:read":           "View basic information about group direct messages that the bot has been added to",
+        "pins:write":          "Add and remove pinned messages and files",
+        "users:read":          "View people in a workspace",
+        "users:read.email":    "View email addresses of people in a workspace",
+    },
+}
+
+
+SLACK_TOOL_SCOPES: dict[str, list[str]] = {
+    "slack_send_message":          [SlackBotScope.CHAT_WRITE, SlackBotScope.CHAT_WRITE_CUSTOMIZE],
+    "slack_create_channel":        [SlackBotScope.CHANNELS_MANAGE],
+    "slack_invite_users":          [SlackBotScope.CHANNELS_MANAGE, SlackBotScope.USERS_READ],
+    "slack_archive_channel":       [SlackBotScope.CHANNELS_MANAGE],
+    "slack_pin_message":           [SlackBotScope.PINS_WRITE],
+    "slack_find_user_by_email":    [SlackBotScope.USERS_READ, SlackBotScope.USERS_READ_EMAIL],
+    "slack_fetch_latest_message":  [SlackBotScope.CHANNELS_HISTORY, SlackBotScope.CHANNELS_READ],
+}
+
+
+def describe_slack_bot_scopes() -> str:
+    """Returns a human-readable summary of Slack Bot Token scopes."""
+    lines = ["Slack Bot Token — Required OAuth Scopes", "=" * 50]
+    for category, scopes in SLACK_BOT_SCOPE_CATEGORIES.items():
+        lines.append(f"\n{category}:")
+        for scope, description in scopes.items():
+            lines.append(f"  ✅ {scope:30s} {description}")
+    return "\n".join(lines)
+
+
+def scopes_for_slack_tool(tool_name: str) -> list[str]:
+    """Return the list of Slack scopes required for a given tool."""
+    return SLACK_TOOL_SCOPES.get(tool_name, [])
+
+
 class ToolInputSchema(BaseModel):
     """Define your input schema in subclasses via args_schema override."""
 
@@ -863,6 +936,11 @@ slack_client = SlackAPIClient(token=settings.SLACK_BOT_TOKEN)
 
 __all__ = [
     "slack_client",
+    "SlackBotScope",
+    "SLACK_BOT_SCOPE_CATEGORIES",
+    "SLACK_TOOL_SCOPES",
+    "describe_slack_bot_scopes",
+    "scopes_for_slack_tool",
     "SendMessageTool",
     "CreateChannelTool",
     "InviteUsersTool",
