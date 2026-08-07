@@ -47,7 +47,7 @@ from langchain_core.tools import BaseTool
 from loguru import logger
 from pydantic import BaseModel, Field
 
-from src.services.lsp_schemas import (
+from src.models.lsp_schemas import (
     CodeAction,
     CodeActionsInput,
     Diagnostic,
