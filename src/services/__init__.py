@@ -81,7 +81,6 @@ from src.services.sonarqube_testing_service import (
     SonarQubeListGithubReposTool,
     SonarQubeGetProjectMeasuresTool,
 )
->>>>>>> origin/feat_services_test
 
 __all__ = [
     # SonarQube
