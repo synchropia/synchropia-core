@@ -2330,6 +2330,7 @@ if __name__ == "__main__":
     tool_3 = ListBranchesTool(github_client=github_client)
     tool_4 = GetTreeTool(github_client=github_client)
     tool_5 = GetFileContentTool(github_client=github_client)
+    tool_6 =ListWorkflowRunsTool(github_client=github_client)
     res_1 = tool_1.invoke({
         "owner":"synchropia",
         "repo_type":"all"
@@ -2354,7 +2355,7 @@ if __name__ == "__main__":
         "branch":branches[1]
     })
     file_paths = [item["path"] for item in res_4]
-    print(file_paths)
+    # print(file_paths)
 
     README_FILE_CONTENT = tool_5.invoke({
         "owner":res_1[1].owner,
@@ -2362,4 +2363,27 @@ if __name__ == "__main__":
         "path":file_paths[5],
         "ref":branches[1]
     })
-    print(README_FILE_CONTENT)
+    # print(README_FILE_CONTENT)
+
+    res_6 = tool_6.invoke({
+        "owner":res_1[1].owner,
+        "repo":res_1[1].name,
+        "ref":branches[1]
+    })
+    runs = res_6["workflow_runs"]
+    run = runs[0]
+    print({
+        "id":          run.get("id"),
+        "name":        run.get("name"),
+        "workflow_id": run.get("workflow_id"),
+        "path":        run.get("path"),
+        "event":       run.get("event"),
+        "status":      run.get("status"),
+        "conclusion":  run.get("conclusion"),
+        "branch":      run.get("head_branch"),
+        "sha":         (run.get("head_sha") or "")[:8],
+        "run_number":  run.get("run_number"),
+        "created_at":  run.get("created_at"),
+        "html_url":    run.get("html_url"),
+        "cancel_url":  run.get("cancel_url"),
+    })
