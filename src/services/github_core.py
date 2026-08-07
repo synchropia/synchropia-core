@@ -2330,7 +2330,10 @@ if __name__ == "__main__":
     tool_3 = ListBranchesTool(github_client=github_client)
     tool_4 = GetTreeTool(github_client=github_client)
     tool_5 = GetFileContentTool(github_client=github_client)
-    tool_6 =ListWorkflowRunsTool(github_client=github_client)
+    tool_6 = ListWorkflowRunsTool(github_client=github_client)
+    tool_7 = ListCommitsTool(github_client=github_client)
+    tool_8 = CompareCommitsTool(github_client=github_client)
+    
     res_1 = tool_1.invoke({
         "owner":"synchropia",
         "repo_type":"all"
@@ -2372,18 +2375,50 @@ if __name__ == "__main__":
     })
     runs = res_6["workflow_runs"]
     run = runs[0]
-    print({
-        "id":          run.get("id"),
-        "name":        run.get("name"),
-        "workflow_id": run.get("workflow_id"),
-        "path":        run.get("path"),
-        "event":       run.get("event"),
-        "status":      run.get("status"),
-        "conclusion":  run.get("conclusion"),
-        "branch":      run.get("head_branch"),
-        "sha":         (run.get("head_sha") or "")[:8],
-        "run_number":  run.get("run_number"),
-        "created_at":  run.get("created_at"),
-        "html_url":    run.get("html_url"),
-        "cancel_url":  run.get("cancel_url"),
+    # print({
+    #     "id":          run.get("id"),
+    #     "name":        run.get("name"),
+    #     "workflow_id": run.get("workflow_id"),
+    #     "path":        run.get("path"),
+    #     "event":       run.get("event"),
+    #     "status":      run.get("status"),
+    #     "conclusion":  run.get("conclusion"),
+    #     "branch":      run.get("head_branch"),
+    #     "sha":         (run.get("head_sha") or "")[:8],
+    #     "run_number":  run.get("run_number"),
+    #     "created_at":  run.get("created_at"),
+    #     "html_url":    run.get("html_url"),
+    #     "cancel_url":  run.get("cancel_url"),
+    # })
+    res_7 = tool_7.invoke({
+        "owner":res_1[1].owner,
+        "repo":res_1[1].name
     })
+
+    head_sha = res_7[0]["sha"]      # newest commit on the page = HEAD
+    base_sha = res_7[-1]["sha"]     # oldest commit on the page = base
+    compare_args = {
+        "owner": res_1[1].owner,
+        "repo": res_1[1].name,
+        "base": base_sha,
+        "head": head_sha,
+        "per_page": 30,
+        "page": 1,
+    }
+    res_8 = tool_8.invoke(compare_args)
+    print(
+        res_8["url"],
+        res_8["html_url"],
+        res_8["permalink_url"],
+        res_8["diff_url"],
+        res_8["patch_url"],
+        res_8["base_commit"],
+        res_8["merge_base_commit"],
+        res_8["status"],
+        res_8["ahead_by"],
+        res_8["behind_by"],
+        res_8["total_commits"],
+        res_8["commits"],
+        res_8["files"],
+    )
+    
