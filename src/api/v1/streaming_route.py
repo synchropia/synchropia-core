@@ -23,6 +23,7 @@ class ChatStreamRequest(BaseModel):
     temperature: float = 0.7
     max_tokens: int = 1024
     org: str
+    org_id: str | None = None
     dir_path: str = ""
     thread_id: str | None = None
     resume: bool = False
@@ -48,7 +49,7 @@ async def chat_stream(
     async def sse_event_generator():
         # 1. Consume from Kafka topics and yield events
         consumer = kafka_client.get_consumer(
-             "synchropia-agent-responses",
+            "synchropia-agent-responses",
             "synchropia-tool-calls",
             "synchropia-tool-responses"
         )
@@ -61,6 +62,7 @@ async def chat_stream(
                 provider=req.provider,
                 run_id=run_id,
                 org=req.org,
+                org_id=req.org_id,
                 user_id=user_id,
                 resume=req.resume,
                 dir_path=resolved_dir_path

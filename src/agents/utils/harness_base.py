@@ -252,7 +252,10 @@ class BaseAgentHarness:
 
     """
 
-    def __init__(self, sandbox_name: str):
+    def __init__(self, sandbox_name: str, org_id: str | None = None):
+        # 0. Per-org identifier used to resolve OAuth tokens from the vault
+        self.org_id = org_id
+
         # 1. Resolve backend: OpenShell → LocalPowerShell fallback
         self.backend: BaseSandbox | None = None
         if HAS_OPENSHELL:
@@ -287,6 +290,25 @@ class BaseAgentHarness:
                 self.tools.append(t_cls(**client_kwargs))
             except Exception as e:
                 print(f"[{self.__class__.__name__}] Skipping {t_cls.__name__}: {e}")
+
+    def _build_gitlab_client(self):
+        """Build a GitLab client authenticated with the org's OAuth token from the vault.
+
+        Falls back to env-configured credentials when the org has no stored token.
+        """
+        if self.org_id:
+            try:
+                client = GitLabAPIClient.from_vault(self.org_id)
+            except Exception as e:
+                print(f"[{self.__class__.__name__}] GitLab vault lookup failed: {e}")
+                client = None
+            if client is not None:
+                return client
+            print(
+                f"[{self.__class__.__name__}] No per-org GitLab token for org_id={self.org_id}; "
+                "falling back to env GitLab credentials."
+            )
+        return self._try_init(GitLabAPIClient)
 
 if __name__ == "__main__":
     baseagentharness = BaseAgentHarness("test-sandbox")

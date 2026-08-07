@@ -132,7 +132,8 @@ async def run_devops(
     sandbox_name: str = "devops-sandbox",
     run_id: str | None = None,
     org: str,
-    user_id: str = "default_user"
+    user_id: str = "default_user",
+    org_id: str | None = None
 ) -> Any:
     """
     Orchestrates the DevOps Agent execution loop, wrapping it in database logging,
@@ -209,7 +210,7 @@ async def run_devops(
         logger.warning(f"Failed to query DevOps semantic cache: {ce}")
 
     # 2. Build Agent
-    harness = DevOpsAgentHarness(sandbox_name=sandbox_name)
+    harness = DevOpsAgentHarness(sandbox_name=sandbox_name, org_id=org_id)
     agent = await build_devops_agent(
         harness=harness,
         provider=provider,

@@ -119,8 +119,11 @@ class CredentialVault:
     def get_org_token_field(
         self, org_id: str, service: str, field: str = "access_token"
     ) -> Optional[str]:
-        """Fetch a single token field, e.g. get_org_token_field(org, "github", "access_token")."""
-        return self.get_secret_at_path(f"/{org_id}/{service}/{field}")
+        """Fetch a single token field, e.g. get_org_token_field(org, "github", "access_token").
+
+        Mirrors the web app's convention: secret named `field` stored at path `/{org_id}/{service}`.
+        """
+        return self.get_secret_at_path(field, path=f"/{org_id}/{service}")
 
     # ------------------------------------------------------------------
     # Helpers
