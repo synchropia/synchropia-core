@@ -1,0 +1,23 @@
+[32m2026-08-07 21:45:02.056[0m | [34m[1mDEBUG   [0m | [36msrc.utils.infisical_bootstrap[0m:[36mbootstrap_env_from_vault[0m:[36m37[0m - [34m[1mINFISICAL_TOKEN or INFISICAL_PROJECT_ID not set — skipping vault bootstrap[0m
+[32m2026-08-07 21:45:03[0m | [1mINFO    [0m | [36msrc.services.mem0_handlers[0m:[36m__init__[0m:[36m42[0m - [1mMemoryLayer client initialized for base URL: https://api.mem0.ai[0m
+[32m2026-08-07 21:45:03[0m | [1mINFO    [0m | [36msrc.services.redis_client[0m:[36m__init__[0m:[36m39[0m - [1mInitializing Redis connection pool to localhost:6379 (DB 0)[0m
+[32m2026-08-07 21:45:03[0m | [32m[1mSUCCESS [0m | [36msrc.services.redis_client[0m:[36m__init__[0m:[36m78[0m - [32m[1mRedis connection pools (sync, async & binary) initialized successfully.[0m
+[32m2026-08-07 21:45:03[0m | [1mINFO    [0m | [36msrc.services.semantic_caching[0m:[36m__init__[0m:[36m139[0m - [1mInitializing VSS Semantic Cache (threshold=0.9, ttl=-1s, dims=1024, algorithm=HNSW)[0m
+[32m2026-08-07 21:45:04[0m | [32m[1mSUCCESS [0m | [36msrc.services.semantic_caching[0m:[36m__init__[0m:[36m151[0m - [32m[1mEmbedding model ready: embed-english-v3.0 (1024 dims)[0m
+[32m2026-08-07 21:45:05[0m | [32m[1mSUCCESS [0m | [36msrc.services.sonarqube_testing_service[0m:[36m__init__[0m:[36m91[0m - [32m[1mSonarQube API client initialized successfully.[0m
+[32m2026-08-07 21:45:06[0m | [1mINFO    [0m | [36msrc.services.slack_service[0m:[36m__init__[0m:[36m162[0m - [1mSlack API client initialized successfully.[0m
+target:     C:\Users\Raghu\Downloads\MAS_Agents\synchropia\src\services\lsp_service.py
+workspace:  C:\Users\Raghu\Downloads\MAS_Agents\synchropia
+
+========================================================================
+
+### lsp_diagnostics  args={'path': 'C:\\Users\\Raghu\\Downloads\\MAS_Agents\\synchropia\\src\\services\\lsp_service.py'}
+LSP timeout: LSP request 'initialize' timed out after 30.0s
+
+### lsp_definition  args={'path': 'C:\\Users\\Raghu\\Downloads\\MAS_Agents\\synchropia\\src\\services\\lsp_service.py', 'line': 915, 'character': 7}
+LSP timeout: LSP request 'initialize' timed out after 30.0s
+
+### lsp_references  args={'path': 'C:\\Users\\Raghu\\Downloads\\MAS_Agents\\synchropia\\src\\services\\lsp_service.py', 'line': 915, 'character': 7}
+LSP timeout: LSP request 'initialize' timed out after 30.0s
+
+### lsp_hover  args={'path': 'C:\\Users\\Raghu\\Downloads\\MAS_Agents\\synchropia\\src\\services\\lsp_service.py', 'line': 915, 'character': 7}

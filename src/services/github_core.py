@@ -442,18 +442,66 @@ class GitHubAPIClient:
             return {"error": f"Unexpected error: {str(e)}"}
 
 
-def _is_lock_file(path: str) -> bool:
-    """Return True if the path points to a dependency/manifest lock file.
+def _is_dependency_file(path: str) -> bool:
+    """Return True if the path is a dependency manifest or lock file.
 
-    Matches ``*.lock`` (uv.lock, poetry.lock, Cargo.lock, yarn.lock) plus the
-    common JS/Python lockfiles that do not use a ``.lock`` extension.
+    Covers ``*.lock`` lockfiles (uv.lock, poetry.lock, Cargo.lock, yarn.lock),
+    JS/Python ecosystem lockfiles that do not use a ``.lock`` extension, and the
+    dependency manifests that pair with them (package.json, pyproject.toml,
+    requirements.txt, Cargo.toml, go.mod, ...).
     """
     name = path.rsplit("/", 1)[-1].lower()
-    return name.endswith(".lock") or name in {
+    if name.endswith(".lock"):
+        return True
+    if name.startswith("requirements") and name.endswith(".txt"):
+        return True
+    return name in {
+        # lockfiles without a trailing .lock extension
         "package-lock.json",
         "pnpm-lock.yaml",
         "pnpm-lock.yml",
+        "bun.lockb",
+        "deno.lock",
+        "conda-lock.yml",
+        # dependency manifests
+        "package.json",
+        "pyproject.toml",
+        "pipfile",
+        "setup.py",
+        "setup.cfg",
+        "cargo.toml",
+        "go.mod",
+        "go.sum",
+        "gemfile",
+        "composer.json",
+        "pom.xml",
+        "build.gradle",
+        "build.gradle.kts",
+        "csproj",
     }
+
+
+def _show_structure(obj: Any, depth: int = 0, max_depth: int = 5) -> None:
+    """Recursively print the shape (keys + types) of a GitHub API response."""
+    pad = "  " * depth
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if isinstance(v, dict):
+                print(f"{pad}{k}: dict")
+                _show_structure(v, depth + 1, max_depth)
+            elif isinstance(v, list):
+                print(f"{pad}{k}: list[{len(v)}]")
+                if v and depth < max_depth:
+                    _show_structure(v[0], depth + 1, max_depth)
+            else:
+                print(f"{pad}{k}: {type(v).__name__} = {str(v)[:60]!r}")
+    elif isinstance(obj, list):
+        if not obj:
+            print(f"{pad}(empty list)")
+        elif depth < max_depth:
+            _show_structure(obj[0], depth, max_depth)
+    else:
+        print(f"{pad}{type(obj).__name__} = {str(obj)[:60]!r}")
 
 
 # ============= REPOSITORY MANAGEMENT TOOLS =============
@@ -2429,19 +2477,21 @@ if __name__ == "__main__":
         "page": 1,
     }
     res_8 = tool_8.invoke(compare_args)
-    print(
-        res_8["url"],
-        res_8["html_url"],
-        res_8["permalink_url"],
-        res_8["diff_url"],
-        res_8["patch_url"],
-        res_8["base_commit"],
-        res_8["merge_base_commit"],
-        res_8["status"],
-        res_8["ahead_by"],
-        res_8["behind_by"],
-        res_8["total_commits"],
-        res_8["commits"],
-        res_8["files"],
-    )
+    for k, v in res_8.items():
+        print(k)
+    # print(
+    #     res_8["url"],
+    #     res_8["html_url"],
+    #     res_8["permalink_url"],
+    #     res_8["diff_url"],
+    #     res_8["patch_url"],
+    #     res_8["base_commit"],
+    #     res_8["merge_base_commit"],
+    #     res_8["status"],
+    #     res_8["ahead_by"],
+    #     res_8["behind_by"],
+    #     res_8["total_commits"],
+    #     res_8["commits"],
+    #     res_8["files"],
+    # )
     

@@ -944,3 +944,52 @@ __all__ = [
     "LSPCodeActionsTool",
     "LSPFormatDocumentTool",
 ]
+
+if __name__ == "__main__":
+    import json as _json
+    import sys as _sys
+
+    for _stream in (_sys.stdout, _sys.stderr):
+        _reconf = getattr(_stream, "reconfigure", None)
+        if _reconf:
+            _reconf(encoding="utf-8", errors="replace")
+
+    logger.remove()
+    logger.add(_sys.stderr, level="WARNING")
+
+    # Real repo file to analyze. Change this to any local source file.
+    target = str(Path(__file__).resolve().parent.parent.parent / "src" / "services" / "lsp_service.py")
+    workspace = str(Path(target).parent.parent.parent)
+    print(f"target:     {target}", flush=True)
+    print(f"workspace:  {workspace}\n", flush=True)
+
+    tools = {t.name: t for t in get_lsp_tools()}
+
+    # 1-indexed line/character of 'get_lsp_tools' inside the target file.
+    probe_line = 915
+    probe_char = 7
+
+    probes = {
+        "lsp_diagnostics": ({"path": target}, 60),
+        "lsp_definition": ({"path": target, "line": probe_line, "character": probe_char}, 60),
+        "lsp_references": ({"path": target, "line": probe_line, "character": probe_char}, 60),
+        "lsp_hover": ({"path": target, "line": probe_line, "character": probe_char}, 60),
+        "lsp_workspace_symbols": (
+            {"query": "get_lsp_tools", "workspace_path": workspace, "language": "python"}, 60,
+        ),
+        "lsp_code_actions": ({"path": target, "line": probe_line, "character": probe_char}, 60),
+        "lsp_format_document": ({"path": target}, 60),
+    }
+
+    print("=" * 72, flush=True)
+    for name, (args, to) in probes.items():
+        print(f"\n### {name}  args={args}", flush=True)
+        try:
+            out = tools[name].invoke(args, timeout=to)
+            print(out, flush=True)
+        except Exception as e:
+            print(f"TOOL FAILED: {type(e).__name__}: {e}", flush=True)
+
+    _lsp_manager.shutdown_all()
+    print("\n[LSP] All sessions shut down.", flush=True)
+        
