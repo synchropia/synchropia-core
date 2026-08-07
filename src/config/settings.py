@@ -87,5 +87,27 @@ class Settings(BaseSettings):
     SAMBANOVA_API_KEY: Optional[str] = None
     NVIDIA_API_KEY: Optional[str] = None
 
+    # -------------------------------------------------------------------------
+    # LSP (Language Server Protocol) Configuration
+    # -------------------------------------------------------------------------
+
+    # Master switch — set to false to disable LSP tools entirely across all harnesses
+    LSP_ENABLED: bool = True
+
+    # How long (seconds) to wait for an LSP request before timing out
+    LSP_TIMEOUT_SECONDS: float = 30.0
+
+    # How long (milliseconds) to wait after didOpen for publishDiagnostics to arrive
+    LSP_DIAGNOSTICS_WAIT_MS: int = 2000
+
+    # Optional overrides for language server binary paths.
+    # If not set, the binary is resolved from PATH.
+    LSP_PYTHON_SERVER_PATH: Optional[str] = None   # default: pyright-langserver
+    LSP_TS_SERVER_PATH: Optional[str] = None        # default: typescript-language-server
+    LSP_GO_SERVER_PATH: Optional[str] = None        # default: gopls
+    LSP_RUST_SERVER_PATH: Optional[str] = None      # default: rust-analyzer
+    LSP_JAVA_SERVER_PATH: Optional[str] = None      # default: jdtls
+    LSP_CLANGD_PATH: Optional[str] = None           # default: clangd
+
 
 settings = Settings()
