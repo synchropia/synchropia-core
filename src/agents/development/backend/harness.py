@@ -14,12 +14,12 @@ class BackendAgentHarness(BaseAgentHarness):
     Backend agent. Focused on backend services and database changes.
     """
 
-    def __init__(self, sandbox_name: str = "backend-sandbox"):
-        super().__init__(sandbox_name=sandbox_name)
+    def __init__(self, sandbox_name: str = "backend-sandbox", org_id: str | None = None):
+        super().__init__(sandbox_name=sandbox_name, org_id=org_id)
 
         # 1. Instantiate service clients
         gh_client = self._try_init(GitHubAPIClient)
-        gl_client = self._try_init(GitLabAPIClient)
+        gl_client = self._build_gitlab_client()
         jr_client = self._try_init(JiraAPIClient)
         sl_client = slack_client
 

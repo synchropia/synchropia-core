@@ -3,7 +3,10 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from sqlalchemy import select
 from src.config.settings import settings
+from src.models.db_models import User
+from src.services.database import db_engine
 import os
 from dotenv import load_dotenv
 
@@ -30,16 +33,19 @@ async def get_current_user(
 ) -> Dict[str, Any]:
     """
     Dependency Injection function to extract, decode, and validate the JWT token.
-    
+
+    The decoded `user_id` (from `sub` or `user_id` claims) must exist in the
+    backend database; otherwise the request is rejected as unauthenticated.
+
     Can be used:
     1. Per route:
        @app.get("/items")
        def read_items(current_user: dict = Depends(get_current_user)):
            ...
-           
+
     2. Per router:
        router = APIRouter(dependencies=[Depends(get_current_user)])
-       
+
     3. Globally for all routes:
        app = FastAPI(dependencies=[Depends(get_current_user)])
     """
@@ -51,18 +57,6 @@ async def get_current_user(
             settings.JWT_SECRET_KEY, 
             algorithms=[settings.JWT_ALGORITHM]
         )
-        
-        # Verify the subject exists in the token payload
-        user_id = payload.get("sub") or payload.get("user_id")
-        if not user_id:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token payload is invalid (missing 'sub' or 'user_id' claim).",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-            
-        return payload
-        
     except jwt.ExpiredSignatureError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -75,3 +69,32 @@ async def get_current_user(
             detail="Could not validate credentials / invalid token.",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # Verify the subject exists in the token payload
+    user_id = payload.get("sub") or payload.get("user_id")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token payload is invalid (missing 'sub' or 'user_id' claim).",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Verify the user actually exists in the backend database
+    with db_engine.connect() as conn:
+        user = conn.execute(
+            select(User).where(User.id == user_id)
+        ).scalar_one_or_none()
+
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User is not registered in the Synchropia backend.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return {
+        "sub": user_id,
+        "user_id": user_id,
+        "role": user.role,
+        "organization_id": user.organization_id,
+    }

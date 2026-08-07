@@ -24,12 +24,12 @@ class DevOpsAgentHarness(BaseAgentHarness):
     - read_image tool for AWS architecture diagram ingestion
     """
 
-    def __init__(self, sandbox_name: str = "devops-sandbox"):
-        super().__init__(sandbox_name=sandbox_name)
+    def __init__(self, sandbox_name: str = "devops-sandbox", org_id: str | None = None):
+        super().__init__(sandbox_name=sandbox_name, org_id=org_id)
 
         # 1. Instantiate service clients
         gh_client = self._try_init(GitHubAPIClient)
-        gl_client = self._try_init(GitLabAPIClient)
+        gl_client = self._build_gitlab_client()
         sl_client = slack_client
 
         # 2. Register DevOps GitHub/GitLab tools

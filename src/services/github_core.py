@@ -13,6 +13,7 @@ import os
 from dotenv import load_dotenv 
 from src.config.settings import settings
 
+
 load_dotenv()
 
 
@@ -158,6 +159,9 @@ class AbstractTool(BaseTool, ABC):
     ):
         """Async execution logic to implement."""
 
+# Global token cache to prevent duplicate JWT exchange requests and speed up execution
+_GITHUB_ACCESS_TOKEN_CACHE: dict[int, tuple[str, int]] = {}
+
 class GitHubAPIClient:
     """
     A comprehensive client for interacting with the GitHub REST API.
@@ -262,14 +266,22 @@ class GitHubAPIClient:
         Generate a JWT signed with the GitHub App's private key and exchange it
         for an installation access token.
         """
-    
-
         if not self.app_id:
             raise ValueError("app_id is not set. Cannot authenticate as GitHub App.")
         if not self.private_key_path:
             raise ValueError("private_key_path is not set. Cannot authenticate as GitHub App.")
         if not self.installation_id:
             raise ValueError("installation_id is not set. Cannot authenticate as GitHub App.")
+
+        # Check in-memory global cache
+        global _GITHUB_ACCESS_TOKEN_CACHE
+        now = int(time.time())
+        inst_id = int(self.installation_id)
+        if inst_id in _GITHUB_ACCESS_TOKEN_CACHE:
+            token, expiry = _GITHUB_ACCESS_TOKEN_CACHE[inst_id]
+            if expiry > now + 60:
+                logger.debug(f"Reusing cached GitHub access token for installation {inst_id}")
+                return token
 
         try:
             with open(self.private_key_path, "r", encoding="utf-8") as f:
@@ -278,7 +290,6 @@ class GitHubAPIClient:
             logger.error(f"Failed to read private key at {self.private_key_path}: {e}")
             raise ValueError(f"Failed to read private key: {e}")
 
-        now = int(time.time())
         payload = {
             "iat": now - 60,
             "exp": now + 600,
@@ -304,7 +315,13 @@ class GitHubAPIClient:
             response = requests.post(url, headers=headers)
             response.raise_for_status()
             token_data = response.json()
-            return token_data["token"]
+            token = token_data["token"]
+            
+            # Cache the token (typically valid for 1 hour, expire 2 minutes early)
+            expiry_secs = 3480
+            _GITHUB_ACCESS_TOKEN_CACHE[inst_id] = (token, now + expiry_secs)
+            logger.success(f"Successfully requested and cached new GitHub access token for installation {inst_id}")
+            return token
         except Exception as e:
             logger.error(f"Failed to retrieve installation access token: {e}")
             raise ValueError(f"Failed to retrieve installation access token: {e}")
@@ -2267,6 +2284,8 @@ class GetTreeTool(AbstractTool):
             results.append(item)
         return results
 
+# class ListCommitsToolResponsePayload(BaseModel):
+
 __all__ = [
     "GitHubAPIClient",
     "GitHubAppPermission",
@@ -2305,9 +2324,42 @@ __all__ = [
 
 if __name__ == "__main__":
     github_client = GitHubAPIClient()
-    tool = GetRepositoryTool(github_client=github_client)
-    res = tool.invoke({
+
+    tool_1 = ListRepositoriesTool(github_client=github_client)
+    tool_2 = GetRepositoryTool(github_client=github_client)
+    tool_3 = ListBranchesTool(github_client=github_client)
+    tool_4 = GetTreeTool(github_client=github_client)
+    tool_5 = GetFileContentTool(github_client=github_client)
+    res_1 = tool_1.invoke({
         "owner":"synchropia",
-        "repo":"synchropia-core"
+        "repo_type":"all"
     })
-    print(res)
+    print(f"these are the two repo names and owner: {res_1[0].name},{res_1[0].owner}, {res_1[1].name},{res_1[1].owner}")
+
+    res_2 = tool_2.invoke({
+        "owner":res_1[0].owner,
+        "repo":res_1[0].name
+    })
+
+    res_3 = tool_3.invoke({
+        "owner":res_1[1].owner,
+        "repo":res_1[1].name
+    })
+    branches = [branch["name"] for branch in res_3]
+
+
+    res_4 = tool_4.invoke({
+        "owner":res_1[1].owner,
+        "repo":res_1[1].name,
+        "branch":branches[1]
+    })
+    file_paths = [item["path"] for item in res_4]
+    print(file_paths)
+
+    README_FILE_CONTENT = tool_5.invoke({
+        "owner":res_1[1].owner,
+        "repo":res_1[1].name,
+        "path":file_paths[5],
+        "ref":branches[1]
+    })
+    print(README_FILE_CONTENT)

@@ -55,6 +55,7 @@ async def build_swarm_orchestrator(
     org: str,
     provider: str = "selfhosted",
     dir_path: str | None = None,
+    org_id: str | None = None,
     **llm_kwargs
 ) -> Any:
     """
@@ -63,12 +64,12 @@ async def build_swarm_orchestrator(
     logger.info("Compiling individual subgraphs for Swarm Orchestrator...")
 
     # 1. Compile subgraphs
-    architect_agent = await build_architect_agent(ArchitectAgentHarness(), provider, org, dir_path=dir_path, **llm_kwargs)
+    architect_agent = await build_architect_agent(ArchitectAgentHarness(org_id=org_id), provider, org, dir_path=dir_path, **llm_kwargs)
     pm_agent = await build_pm_agent(PMAgentHarness(), provider, org, dir_path=dir_path, **llm_kwargs)
-    devops_agent = await build_devops_agent(DevOpsAgentHarness(), provider, org, dir_path=dir_path, **llm_kwargs)
+    devops_agent = await build_devops_agent(DevOpsAgentHarness(org_id=org_id), provider, org, dir_path=dir_path, **llm_kwargs)
     qa_agent = await build_qa_agent(QAAgentHarness(), provider, org, dir_path=dir_path, **llm_kwargs)
-    frontend_agent = await build_frontend_agent(FrontendAgentHarness(), provider, org, dir_path=dir_path, **llm_kwargs)
-    backend_agent = await build_backend_agent(BackendAgentHarness(), provider, org, dir_path=dir_path, **llm_kwargs)
+    frontend_agent = await build_frontend_agent(FrontendAgentHarness(org_id=org_id), provider, org, dir_path=dir_path, **llm_kwargs)
+    backend_agent = await build_backend_agent(BackendAgentHarness(org_id=org_id), provider, org, dir_path=dir_path, **llm_kwargs)
     data_engineer_agent = await build_data_engineer_agent(DataEngineerAgentHarness(), provider, org, dir_path=dir_path, **llm_kwargs)
     data_scientist_agent = await build_data_scientist_agent(DataScientistAgentHarness(), provider, org, dir_path=dir_path, **llm_kwargs)
     mlops_agent = await build_mlops_agent(MLOpsAgentHarness(), provider, org, dir_path=dir_path, **llm_kwargs)
@@ -252,7 +253,8 @@ async def run_swarm(
     org: str,
     user_id: str = "default_user",
     resume: bool = False,
-    dir_path: str | None = None
+    dir_path: str | None = None,
+    org_id: str | None = None
 ) -> Any:
     """
     Invokes the parent Swarm Orchestration Graph with full logging and Kafka streaming.
@@ -328,7 +330,7 @@ async def run_swarm(
         logger.warning(f"Failed to query semantic cache: {ce}")
 
     # 2. Build parent swarm graph
-    agent = await build_swarm_orchestrator(org=org, provider=provider, dir_path=dir_path)
+    agent = await build_swarm_orchestrator(org=org, provider=provider, dir_path=dir_path, org_id=org_id)
 
     # 3. Log pre-execution parameters
     execution_id = None

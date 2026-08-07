@@ -10,6 +10,7 @@ cli_stream_architect.py
 sse_client_rich.py
 digest.txt 
 mlflow.db 
+docs/
 sse_client.py
 response 
 # Virtual environments

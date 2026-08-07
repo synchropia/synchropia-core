@@ -73,14 +73,16 @@ from src.services.slack_service import (
     FindUserByEmailTool,
     FetchLatestMessageTool,
 )
+<<<<<<< HEAD
+=======
 from src.services.sonarqube_testing_service import (
     SonarQubeAPIClient,
     sonarqube_client,
     SonarQubeGetProjectStatusTool,
     SonarQubeListGithubReposTool,
-    SonarQubeGetProjectIssuesTool,
     SonarQubeGetProjectMeasuresTool,
 )
+>>>>>>> origin/feat_services_test
 
 __all__ = [
     # SonarQube
@@ -88,7 +90,6 @@ __all__ = [
     "sonarqube_client",
     "SonarQubeGetProjectStatusTool",
     "SonarQubeListGithubReposTool",
-    "SonarQubeGetProjectIssuesTool",
     "SonarQubeGetProjectMeasuresTool",
     # GitHub
     "GitHubAPIClient",

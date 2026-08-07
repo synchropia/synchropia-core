@@ -17,6 +17,8 @@ from src.services.kafka_service import kafka_client
 from src.core.llm_gateway import unified_llm_gateway
 from src.services.sonarqube_testing_service import * 
 from src.api.v1.streaming_route import router as streaming_router
+from src.api.v1.dashboard_route import router as dashboard_router
+from src.api.v1.auth_route import router as auth_router
 from src.utils.logger import logger 
 from src.utils.rate_limiter import rate_limiter
 
@@ -136,6 +138,8 @@ def health_check():
     }
     
 app.include_router(streaming_router)
+app.include_router(dashboard_router)
+app.include_router(auth_router)
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

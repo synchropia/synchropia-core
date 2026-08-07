@@ -124,26 +124,6 @@ def navigate_entire_codebase_given_path(path: str) -> List[str]:
     return file_list
 
 @tool
-def execute_python_code(path: str) -> str:
-    """Runs the python file at the specified path and returns stdout and stderr logs."""
-    try:
-        process = subprocess.run(
-            [sys.executable, path],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            errors="replace"
-        )
-        output = process.stdout
-        if process.stderr:
-            output += f"\n[stderr]\n{process.stderr}"
-        return output
-    except subprocess.TimeoutExpired:
-        return "Error: Python execution timed out after 30 seconds."
-    except Exception as e:
-        return f"Exception occurred while executing {path}: {e}"
-
-@tool
 def windows_powershell_command(command: str) -> str:
     """Run a command in a windows PowerShell session and return the output."""
     try:
@@ -176,6 +156,9 @@ CUSTOM_FILESYSTEM_TOOLS = [
     current_directory,
     change_directory,
     navigate_entire_codebase_given_path,
-    execute_python_code,
     windows_powershell_command
+]
+
+__all__ = [
+    CUSTOM_FILESYSTEM_TOOLS 
 ]

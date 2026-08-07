@@ -19,6 +19,7 @@ load_dotenv()
 
 from abc import ABC, abstractmethod
 from langchain_core.tools import BaseTool
+from src.services.credential_vault import CredentialVault
 from src.utils.logger import logger
 
 # =====================================================================
@@ -279,6 +280,29 @@ class GitLabAPIClient:
         self.sync_client = httpx.Client(headers=self.headers, timeout=30.0)
         self.async_client = httpx.AsyncClient(headers=self.headers, timeout=30.0)
         logger.info(f"GitLabAPIClient initialized with base_url: {self.base_url}")
+
+    @classmethod
+    def from_vault(
+        cls, org_id: str, base_url: str = "https://gitlab.com/api/v4"
+    ) -> Optional["GitLabAPIClient"]:
+        """Build a client authenticated with the per-org OAuth token stored in Infisical.
+
+        Resolves the `access_token` stored by the web onboarding flow at
+        `/{org_id}/gitlab/access_token`. Returns None when no token exists yet
+        (org not connected/onboarded) so callers can fall back to env config.
+        """
+        try:
+            
+            token = CredentialVault.get().get_org_token_field(
+                org_id, "gitlab", "access_token"
+            )
+        except Exception as exc:
+            logger.error(f"Failed to resolve GitLab token from vault for org_id={org_id}: {exc}")
+            return None
+        if not token:
+            logger.warning(f"No GitLab OAuth token stored in vault for org_id={org_id}")
+            return None
+        return cls(oauth_token=token, base_url=base_url)
 
     def __del__(self):
         try:

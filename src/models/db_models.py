@@ -16,9 +16,32 @@ class Organization(Base):
     name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     github_org_name: Mapped[str] = mapped_column(String(100), nullable=False)
     jira_project_key: Mapped[str] = mapped_column(String(10), nullable=True)
+    web_org_id: Mapped[Optional[str]] = mapped_column(String(50), unique=True, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
+    users: Mapped[List["User"]] = relationship("User", back_populates="organization", cascade="all, delete-orphan")
     sessions: Mapped[List["Session"]] = relationship("Session", back_populates="organization", cascade="all, delete-orphan")
+
+
+class User(Base):
+    """A workspace user (id mirrors the web app's Better Auth user id)."""
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    email: Mapped[Optional[str]] = mapped_column(String(255), unique=True, nullable=True)
+    role: Mapped[str] = mapped_column(String(50), default="viewer")  # org_admin | developer | devops | viewer
+    organization_id: Mapped[Optional[str]] = mapped_column(ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    organization: Mapped[Optional["Organization"]] = relationship("Organization", back_populates="users")
+    sessions: Mapped[List["Session"]] = relationship(
+        "Session",
+        back_populates="user",
+        primaryjoin="foreign(Session.user_id) == User.id",
+    )
 
 class Session(Base):
     """A user conversation/interaction thread."""
@@ -31,6 +54,11 @@ class Session(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     organization: Mapped["Organization"] = relationship("Organization", back_populates="sessions")
+    user: Mapped["User"] = relationship(
+        "User",
+        back_populates="sessions",
+        primaryjoin="foreign(Session.user_id) == User.id",
+    )
     runs: Mapped[List["OrchestrationRun"]] = relationship("OrchestrationRun", back_populates="session", cascade="all, delete-orphan")
     messages: Mapped[List["MessageLog"]] = relationship("MessageLog", back_populates="session", cascade="all, delete-orphan")
 
