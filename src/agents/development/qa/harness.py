@@ -37,6 +37,10 @@ class QAAgentHarness(BaseAgentHarness):
     - Slack notification tool
     - Full SonarQube code-quality inspection suite (status, measures, history,
       issues, project search, GitHub repo listing)
+    - **LSP semantic tools** (inherited from BaseAgentHarness via LSP_TOOLS):
+      lsp_diagnostics, lsp_definition, lsp_references, lsp_hover,
+      lsp_workspace_symbols, lsp_code_actions, lsp_format_document.
+      These provide fast pre-PR inner-loop checks BEFORE SonarQube's post-CI gate.
     """
 
     def __init__(self, sandbox_name: str = "qa-sandbox"):

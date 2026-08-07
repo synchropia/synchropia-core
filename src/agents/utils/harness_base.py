@@ -31,6 +31,16 @@ from src.config.settings import settings
 from src.agents.utils.handoffs import HANDOFF_TOOLS
 from src.agents.utils.filesystem_tools import CUSTOM_FILESYSTEM_TOOLS
 
+# Import LSP tools — guarded so a missing language server binary
+# does not prevent the harness from starting.
+try:
+    from src.services.lsp_service import LSP_TOOLS
+    _HAS_LSP = True
+except Exception as _lsp_import_err:
+    LSP_TOOLS = []
+    _HAS_LSP = False
+    print(f"[HarnessBase] LSP tools unavailable: {_lsp_import_err}")
+
 io_executor = ThreadPoolExecutor(max_workers=4)
 
 
@@ -267,9 +277,12 @@ class BaseAgentHarness:
         if self.backend is None:
             self.backend = LocalPowerShellBackend(sandbox_name=sandbox_name)
 
-        # Initialize tool list with unified handoff tools
-  
+        # Initialize tool list with unified handoff tools + filesystem tools
         self.tools: List[Any] = list(HANDOFF_TOOLS) + list(CUSTOM_FILESYSTEM_TOOLS)
+
+        # Append LSP tools when enabled (guarded — missing binary won't crash the harness)
+        if _HAS_LSP and settings.LSP_ENABLED:
+            self.tools.extend(LSP_TOOLS)
 
     @staticmethod
     def _try_init(cls, *args, **kwargs):
