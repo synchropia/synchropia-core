@@ -442,6 +442,20 @@ class GitHubAPIClient:
             return {"error": f"Unexpected error: {str(e)}"}
 
 
+def _is_lock_file(path: str) -> bool:
+    """Return True if the path points to a dependency/manifest lock file.
+
+    Matches ``*.lock`` (uv.lock, poetry.lock, Cargo.lock, yarn.lock) plus the
+    common JS/Python lockfiles that do not use a ``.lock`` extension.
+    """
+    name = path.rsplit("/", 1)[-1].lower()
+    return name.endswith(".lock") or name in {
+        "package-lock.json",
+        "pnpm-lock.yaml",
+        "pnpm-lock.yml",
+    }
+
+
 # ============= REPOSITORY MANAGEMENT TOOLS =============
 class ListRepositoriesInput(BaseModel):
     owner: str = Field(description="GitHub username or organization name")
@@ -1542,7 +1556,10 @@ class CompareCommitsTool(AbstractTool):
     ):
         endpoint = f"repos/{owner}/{repo}/compare/{base}...{head}"
         params = {"per_page": per_page, "page": page}
-        return self.github_client.make_request("GET", endpoint, params)
+        res = self.github_client.make_request("GET", endpoint, params)
+        if isinstance(res, dict) and isinstance(res.get("files"), list):
+            res["files"] = [f for f in res["files"] if not _is_lock_file(f.get("filename", ""))]
+        return res
 
     async def _arun(
         self,
@@ -1556,7 +1573,10 @@ class CompareCommitsTool(AbstractTool):
     ):
         endpoint = f"repos/{owner}/{repo}/compare/{base}...{head}"
         params = {"per_page": per_page, "page": page}
-        return await self.github_client.make_async_request("GET", endpoint, params)
+        res = await self.github_client.make_async_request("GET", endpoint, params)
+        if isinstance(res, dict) and isinstance(res.get("files"), list):
+            res["files"] = [f for f in res["files"] if not _is_lock_file(f.get("filename", ""))]
+        return res
 
 
 class ListBranchesInput(BaseModel):
@@ -1866,6 +1886,8 @@ class GetFileContentTool(AbstractTool):
         ref: str = "",
         run_manager: Optional[CallbackManagerForToolRun] = None,
     ):
+        if _is_lock_file(path):
+            return {"error": f"Reading lock files is not allowed: {path}"}
         endpoint = f"repos/{owner}/{repo}/contents/{path}"
         params = {}
         if ref:
@@ -1888,11 +1910,8 @@ class GetFileContentTool(AbstractTool):
         ref: str = "",
         run_manager: Optional[AsyncCallbackManagerForToolRun] = None,
     ):
-        endpoint = f"repos/{owner}/{repo}/contents/{path}"
-        params = {}
-        if ref:
-            params["ref"] = ref
-        res = await self.github_client.make_async_request("GET", endpoint, params)
+        if _is_lock_file(path):
+            return {"error": f"Reading lock files is not allowed: {path}"}
         if isinstance(res, dict) and res.get("encoding") == "base64" and "content" in res:
             try:
                 import base64
@@ -2242,6 +2261,8 @@ class GetTreeTool(AbstractTool):
 
         results = []
         for entry in tree_response.get("tree", []):
+            if _is_lock_file(entry.get("path", "")):
+                continue
             item = {
                 "path": entry.get("path"),
                 "type": entry.get("type"),
@@ -2273,6 +2294,8 @@ class GetTreeTool(AbstractTool):
 
         results = []
         for entry in tree_response.get("tree", []):
+            if _is_lock_file(entry.get("path", "")):
+                continue
             item = {
                 "path": entry.get("path"),
                 "type": entry.get("type"),
