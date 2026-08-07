@@ -78,7 +78,6 @@ from src.services.sonarqube_testing_service import (
     sonarqube_client,
     SonarQubeGetProjectStatusTool,
     SonarQubeListGithubReposTool,
-    SonarQubeGetProjectIssuesTool,
     SonarQubeGetProjectMeasuresTool,
 )
 
@@ -88,7 +87,6 @@ __all__ = [
     "sonarqube_client",
     "SonarQubeGetProjectStatusTool",
     "SonarQubeListGithubReposTool",
-    "SonarQubeGetProjectIssuesTool",
     "SonarQubeGetProjectMeasuresTool",
     # GitHub
     "GitHubAPIClient",

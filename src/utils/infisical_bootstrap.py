@@ -11,7 +11,11 @@ from typing import Optional
 
 from loguru import logger
 
-import infisical_client as infisical
+try:
+    from infisical_sdk import InfisicalSDKClient
+    HAS_INFISICAL = True
+except ImportError:
+    HAS_INFISICAL = False
 
 
 def bootstrap_env_from_vault() -> None:
@@ -20,9 +24,14 @@ def bootstrap_env_from_vault() -> None:
     Call this before pydantic BaseSettings() is constructed so that
     all required fields resolve without needing a .env file.
     """
+    if not HAS_INFISICAL:
+        logger.debug("infisical_sdk not installed — skipping vault bootstrap")
+        return
+
     token = os.getenv("INFISICAL_TOKEN")
     project_id = os.getenv("INFISICAL_PROJECT_ID", "")
     environment = os.getenv("INFISICAL_ENVIRONMENT", "dev")
+    site_url = os.getenv("INFISICAL_SITE_URL", "https://app.infisical.com")
 
     if not token or not project_id:
         logger.debug(
@@ -31,11 +40,8 @@ def bootstrap_env_from_vault() -> None:
         return
 
     try:
-        settings = infisical.ClientSettings(
-            access_token=token,
-            site_url=os.getenv("INFISICAL_SITE_URL", "https://app.infisical.com"),
-        )
-        client = infisical.InfisicalClient(settings=settings)
+        client = InfisicalSDKClient(host=site_url)
+        client.set_token(token)
     except Exception as exc:
         logger.warning("Failed to init Infisical client: {}", exc)
         return
@@ -87,16 +93,16 @@ def bootstrap_env_from_vault() -> None:
     for key in _REQUIRED_FIELDS:
         if key not in os.environ:
             try:
-                opts = infisical.GetSecretOptions(
-                    environment=environment,
-                    project_id=project_id,
+                secret = client.secrets.get_secret_by_name(
                     secret_name=key,
-                    path="/",
-                    include_imports=True,
+                    environment_slug=environment,
+                    secret_path="/",
+                    project_id=project_id,
                 )
-                result = client.getSecret(opts)
-                if result and result.secret_value:
-                    os.environ[key] = result.secret_value
+                val = getattr(secret, "secret_value", None) or getattr(secret, "secretValue", None)
+                if val:
+                    os.environ[key] = val
                     logger.debug("Pulled {} from Infisical vault", key)
             except Exception:
                 pass  # pydantic will raise if field is required
+

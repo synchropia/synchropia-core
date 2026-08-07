@@ -5,7 +5,11 @@ from dataclasses import dataclass
 from typing import Optional
 from loguru import logger
 
-import infisical_client as infisical
+try:
+    from infisical_sdk import InfisicalSDKClient
+    HAS_INFISICAL = True
+except ImportError:
+    HAS_INFISICAL = False
 
 load_dotenv()
 
@@ -49,11 +53,12 @@ class CredentialVault:
                 "No INFISICAL_TOKEN set — falling back to local CLI session"
             )
 
-        settings = infisical.ClientSettings(
-            access_token=token,
-            site_url=cfg.site_url,
-        )
-        self._client = infisical.InfisicalClient(settings=settings)
+        if HAS_INFISICAL:
+            self._client = InfisicalSDKClient(host=cfg.site_url)
+            if token:
+                self._client.set_token(token)
+        else:
+            self._client = None
         self._env = cfg.environment or "dev"
         self._project_id = cfg.project_id or os.getenv("INFISICAL_PROJECT_ID", "")
 
@@ -81,15 +86,22 @@ class CredentialVault:
 
     def list_secrets(self, path: str = "/") -> dict[str, str]:
         """List all secrets at a given path."""
+        if not self._client:
+            return {}
         try:
-            opts = infisical.ListSecretsOptions(
-                environment=self._env,
+            res = self._client.secrets.list_secrets(
+                environment_slug=self._env,
+                secret_path=path,
                 project_id=self._project_id,
-                path=path,
-                attach_to_process_env=False,
             )
-            secrets = self._client.listSecrets(opts) or []
-            return {s.secret_key: s.secret_value for s in secrets}
+            secrets = getattr(res, "secrets", res) or []
+            out = {}
+            for s in secrets:
+                k = getattr(s, "secret_key", None) or getattr(s, "secretKey", None)
+                v = getattr(s, "secret_value", None) or getattr(s, "secretValue", None)
+                if k and v is not None:
+                    out[k] = v
+            return out
         except Exception as exc:
             logger.error(
                 "Failed to list secrets path={} env={} project={}: {}",
@@ -128,16 +140,16 @@ class CredentialVault:
 
     def get_secret_at_path(self, key: str, path: str = "/") -> Optional[str]:
         """Fetch a single secret at an arbitrary path."""
+        if not self._client:
+            return None
         try:
-            opts = infisical.GetSecretOptions(
-                environment=self._env,
-                project_id=self._project_id,
+            secret = self._client.secrets.get_secret_by_name(
                 secret_name=key,
-                path=path,
-                include_imports=True,
+                environment_slug=self._env,
+                secret_path=path,
+                project_id=self._project_id,
             )
-            result = self._client.getSecret(opts)
-            return result.secret_value if result else None
+            return getattr(secret, "secret_value", None) or getattr(secret, "secretValue", None)
         except Exception as exc:
             logger.warning("Secret not found key={} path={}: {}", key, path, exc)
             return None
@@ -149,29 +161,40 @@ class CredentialVault:
         path: str = "/",
     ) -> None:
         """Create or update a secret."""
+        if not self._client:
+            return
         try:
-            opts = infisical.UpdateSecretOptions(
-                environment=self._env,
-                project_id=self._project_id,
-                secret_name=key,
-                secret_value=value,
-                path=path,
-            )
-            self._client.updateSecret(opts)
+            try:
+                self._client.secrets.update_secret_by_name(
+                    current_secret_name=key,
+                    secret_path=path,
+                    environment_slug=self._env,
+                    project_id=self._project_id,
+                    secret_value=value,
+                )
+            except Exception:
+                self._client.secrets.create_secret_by_name(
+                    secret_name=key,
+                    secret_path=path,
+                    environment_slug=self._env,
+                    project_id=self._project_id,
+                    secret_value=value,
+                )
             logger.info("Secret set key={} path={}", key, path)
         except Exception as exc:
             logger.error("Failed to set secret key={}: {}", key, exc)
 
     def delete_secret(self, key: str, path: str = "/") -> None:
         """Delete a secret."""
+        if not self._client:
+            return
         try:
-            opts = infisical.DeleteSecretOptions(
-                environment=self._env,
-                project_id=self._project_id,
+            self._client.secrets.delete_secret_by_name(
                 secret_name=key,
-                path=path,
+                secret_path=path,
+                environment_slug=self._env,
+                project_id=self._project_id,
             )
-            self._client.deleteSecret(opts)
             logger.info("Secret deleted key={} path={}", key, path)
         except Exception as exc:
             logger.error("Failed to delete secret key={}: {}", key, exc)
@@ -181,3 +204,4 @@ class CredentialVault:
         if val is None:
             raise ValueError(f"Secret not found: {key} at path={path}")
         return val
+

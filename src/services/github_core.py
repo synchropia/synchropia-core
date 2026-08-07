@@ -2267,6 +2267,8 @@ class GetTreeTool(AbstractTool):
             results.append(item)
         return results
 
+# class ListCommitsToolResponsePayload(BaseModel):
+
 __all__ = [
     "GitHubAPIClient",
     "GitHubAppPermission",
@@ -2305,9 +2307,29 @@ __all__ = [
 
 if __name__ == "__main__":
     github_client = GitHubAPIClient()
-    tool = GetRepositoryTool(github_client=github_client)
+    # tool = GetRepositoryTool(github_client=github_client)
+    # tool = ListBranchesTool(github_client=github_client)
+    tool = ListCommitsTool(github_client=github_client)
     res = tool.invoke({
         "owner":"synchropia",
-        "repo":"synchropia-core"
+        "repo":"synchropia-core",
+        "sha": "b193d00a8dc779a07d991e2267d852119ad487fd"
     })
     print(res)
+
+#   if __name__ == "__main__":
+#     github_client = GitHubAPIClient()
+
+#     tool_1 = ListRepositoriesTool(github_client=github_client)
+#     tool_2 = GetRepositoryTool(github_client=github_client)
+#     res = tool_1.invoke({
+#         "owner":"synchropia",
+#         "repo_type":"all"
+#     })
+#     print(f"these are the two repo names and owner: {res[0].name},{res[0].owner}, {res[1].name},{res[1].owner}")
+
+#     res = tool_2.invoke({
+#         "owner":res[0].owner,
+#         "repo":res[0].name
+#     })
+#     print(res)
