@@ -2284,6 +2284,8 @@ class GetTreeTool(AbstractTool):
             results.append(item)
         return results
 
+# class ListCommitsToolResponsePayload(BaseModel):
+
 __all__ = [
     "GitHubAPIClient",
     "GitHubAppPermission",
