@@ -73,8 +73,7 @@ from src.services.slack_service import (
     FindUserByEmailTool,
     FetchLatestMessageTool,
 )
-<<<<<<< HEAD
-=======
+
 from src.services.sonarqube_testing_service import (
     SonarQubeAPIClient,
     sonarqube_client,
